@@ -207,6 +207,9 @@ export function App({ pipeline, header, execute, initialNodes }: Props) {
             )}
             {st.result?.allowFailure && (st.status === 'failed' || st.status === 'error') && <Text color="yellow"> allow_failure</Text>}
             {st.status === 'skipped' && st.result?.summary && <Text color="gray"> {st.result.summary}</Text>}
+            {st.result?.reasons?.length ? (
+              <Text color={st.status === 'failed' ? 'red' : 'yellow'}>  {st.result.reasons.map(shortReason).join(', ')}</Text>
+            ) : null}
           </Text>
         );
       })}
@@ -271,6 +274,11 @@ export function openInEditor(file: string, line?: number | null): { editor: stri
 }
 
 /** Rough number of terminal rows a finding takes, used to keep the selection on screen. */
+/** "audit incomplete: a; b" → "audit incomplete" for the one-line stage tree. */
+function shortReason(reason: string): string {
+  return reason.split(/[:(]/)[0].trim();
+}
+
 function findingHeight(f: Finding, width: number): number {
   const rowsFor = (text: string) => Math.max(1, Math.ceil(text.length / Math.max(20, width)));
   return 1 + rowsFor(f.message) + (f.suggestion ? rowsFor('→ ' + f.suggestion) : 0) + 1;
@@ -332,7 +340,9 @@ function Detail({
 
   // Fixed chrome: header, rule, summary (estimated), counts, rule, ..., rule, footer, notice.
   const summaryRows = result?.summary ? Math.ceil(result.summary.length / Math.max(20, columns - 2)) : 0;
-  const available = Math.max(4, rows - 7 - summaryRows - (result?.error ? 1 : 0));
+  const reasons = result?.reasons ?? [];
+  const reasonRows = reasons.reduce((n, r) => n + Math.ceil((r.length + 4) / Math.max(20, columns - 2)), 0);
+  const available = Math.max(4, rows - 7 - summaryRows - reasonRows - (result?.error ? 1 : 0));
 
   let body: React.ReactNode;
   let position = '';
@@ -422,6 +432,11 @@ function Detail({
           <Text color="red">Error: {result.error}</Text>
         </Box>
       )}
+      {reasons.map((r) => (
+        <Box key={r} paddingLeft={1}>
+          <Text color={status === 'failed' ? 'red' : 'yellow'}>⚠ {r}</Text>
+        </Box>
+      ))}
       {findings.length > 0 && (
         <Text>
           {' '}

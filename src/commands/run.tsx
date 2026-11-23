@@ -146,6 +146,7 @@ export async function runCommand(target: string | undefined, flags: RunFlags): P
               costUsd: r?.costUsd,
               summary: r?.summary,
               error: r?.error,
+              reasons: r?.reasons,
               findings: r?.findings ?? [],
             };
           }),

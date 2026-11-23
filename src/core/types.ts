@@ -21,6 +21,12 @@ export const StageConfigSchema = z
     agent: z.string().optional(),
     model: z.string().optional(),
     max_budget_usd: z.number().positive().optional(),
+    /** Extra paths the AI must not read in this stage (added to the inherited ones). */
+    sensitive_paths: z.array(z.string()).optional(),
+    /** command+AI: a non-zero exit code fails the stage, whatever the AI reports. */
+    require_exit_zero: z.boolean().default(false),
+    /** What to do when the AI says it could not check the whole scope. */
+    on_incomplete: z.enum(['fail', 'warn']).optional(),
   })
   .strict();
 export type StageConfig = z.infer<typeof StageConfigSchema>;
@@ -31,6 +37,10 @@ export const GroupConfigSchema = z
     parallel: z.boolean().default(false),
     fail_fast: z.boolean().optional(),
     enabled: z.boolean().default(true),
+    /** Most children of a parallel group that run at the same time. */
+    max_parallel: z.number().int().positive().optional(),
+    /** Extra paths the AI must not read in this group's stages. */
+    sensitive_paths: z.array(z.string()).optional(),
   })
   .strict();
 export type GroupConfig = z.infer<typeof GroupConfigSchema>;
@@ -59,6 +69,10 @@ export const PipelineConfigSchema = z
     sensitive_paths: z.array(z.string()).default([]),
     max_budget_usd: z.number().positive().default(1),
     confirm_ai: z.boolean().default(true),
+    /** Default for parallel groups: most children running at the same time. */
+    max_parallel: z.number().int().positive().default(4),
+    /** Default for AI stages whose audit did not cover the whole scope. */
+    on_incomplete: z.enum(['fail', 'warn']).default('fail'),
   })
   .strict();
 export type PipelineConfig = z.infer<typeof PipelineConfigSchema>;
@@ -76,6 +90,8 @@ export interface StageNode {
   body: string;
   /** Context inherited from pipeline.md and parent _group.md files, outermost first. */
   context: string[];
+  /** Every path the AI must not read: defaults, pipeline.md, parent groups, and the stage itself. */
+  sensitivePaths: string[];
 }
 
 export interface GroupNode {
@@ -108,11 +124,22 @@ export const FindingSchema = z.object({
 });
 export type Finding = z.infer<typeof FindingSchema>;
 
+/** The answer format the AI is asked for (every field required). */
 export const AiVerdictSchema = z.object({
   summary: z.string(),
   findings: z.array(FindingSchema),
+  /** false when part of the stage's scope was not checked. */
+  complete: z.boolean(),
+  /** What was not checked, when complete is false. */
+  not_checked: z.array(z.string()),
 });
-export type AiVerdict = z.infer<typeof AiVerdictSchema>;
+
+/** The answer as parsed: an AI that leaves out the completeness fields is treated as complete. */
+export const AiVerdictParseSchema = AiVerdictSchema.extend({
+  complete: z.boolean().default(true),
+  not_checked: z.array(z.string()).default([]),
+});
+export type AiVerdict = z.infer<typeof AiVerdictParseSchema>;
 
 export type StageStatus = 'pending' | 'running' | 'passed' | 'failed' | 'error' | 'skipped';
 
@@ -125,6 +152,8 @@ export interface StageResult {
   findings: Finding[];
   costUsd?: number;
   error?: string;
+  /** Why the stage failed beyond its findings, e.g. an incomplete audit or a non-zero exit code. */
+  reasons?: string[];
   logFile?: string;
   allowFailure: boolean;
 }

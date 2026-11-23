@@ -1,6 +1,6 @@
 import { createWriteStream, mkdirSync, type WriteStream } from 'node:fs';
 import path from 'node:path';
-import type { Adapter } from './adapters/types.js';
+import { AgentError, type Adapter } from './adapters/types.js';
 import type { EventSink } from './events.js';
 import { runAiStage, isBlocking } from './runners/ai.js';
 import { runCommand } from './runners/command.js';
@@ -111,7 +111,7 @@ export async function runPipeline(pipeline: Pipeline, opts: RunOptions): Promise
         cwd: pipeline.root,
         model: pipeline.config.model,
         language: pipeline.config.language,
-        sensitivePaths: pipeline.config.sensitive_paths,
+        sensitivePaths: stage.sensitivePaths,
         maxBudgetUsd: pipeline.config.max_budget_usd,
         timeoutMs: parseDuration(stage.config.timeout, DEFAULT_AI_TIMEOUT_MS),
         signal: opts.signal,
@@ -119,20 +119,38 @@ export async function runPipeline(pipeline: Pipeline, opts: RunOptions): Promise
         command,
       });
       for (const denied of outcome.deniedReads) emit(`[AI] access blocked: ${denied}`);
-      const blocking = outcome.verdict.findings.filter((f) => isBlocking(f, stage.config.fail_on));
-      emit(`[AI] ${outcome.verdict.summary}`);
+      const { verdict } = outcome;
+      const blocking = verdict.findings.filter((f) => isBlocking(f, stage.config.fail_on));
+      emit(`[AI] ${verdict.summary}`);
+
+      // Reasons that fail the stage beyond its findings.
+      const reasons: string[] = [];
+      let failed = blocking.length > 0;
+      if (!verdict.complete) {
+        const onIncomplete = stage.config.on_incomplete ?? pipeline.config.on_incomplete;
+        const skipped = verdict.not_checked.length ? `: ${verdict.not_checked.join('; ')}` : '';
+        reasons.push(`audit incomplete${onIncomplete === 'warn' ? ' (on_incomplete: warn)' : ''}${skipped}`);
+        emit(`[AI] audit incomplete${skipped}`);
+        if (onIncomplete === 'fail') failed = true;
+      }
+      if (command && stage.config.require_exit_zero && command.exitCode !== 0) {
+        reasons.push(`command exited with code ${command.exitCode} (require_exit_zero)`);
+        failed = true;
+      }
       return finish({
-        status: blocking.length ? 'failed' : 'passed',
+        status: failed ? 'failed' : 'passed',
         exitCode: command?.exitCode,
-        summary: outcome.verdict.summary,
-        findings: outcome.verdict.findings,
+        summary: verdict.summary,
+        findings: verdict.findings,
         costUsd: outcome.costUsd,
+        reasons: reasons.length ? reasons : undefined,
       });
     } catch (err) {
-      if (opts.signal?.aborted) return finish({ status: 'skipped', summary: 'cancelled' });
+      const costUsd = err instanceof AgentError ? err.costUsd : undefined;
+      if (opts.signal?.aborted) return finish({ status: 'skipped', summary: 'cancelled', costUsd });
       const message = (err as Error).message;
       emit(`ERROR: ${message}`);
-      return finish({ status: 'error', error: message });
+      return finish({ status: 'error', error: message, costUsd });
     }
   };
 
@@ -146,7 +164,7 @@ export async function runPipeline(pipeline: Pipeline, opts: RunOptions): Promise
     const t0 = Date.now();
     opts.onEvent({ type: 'group:start', id: group.id });
     const failed = group.config.parallel
-      ? (await Promise.all(group.children.map((c) => runNode(c, failFast)))).some(Boolean)
+      ? await runParallel(group.children, failFast, group.config.max_parallel ?? pipeline.config.max_parallel)
       : await runSequence(group.children, failFast);
     const status: StageStatus = failed
       ? 'failed'
@@ -154,6 +172,24 @@ export async function runPipeline(pipeline: Pipeline, opts: RunOptions): Promise
         ? 'skipped'
         : 'passed';
     opts.onEvent({ type: 'group:finish', id: group.id, status, durationMs: Date.now() - t0 });
+    return failed;
+  };
+
+  /** Run nodes concurrently, at most `limit` at a time, in file order. */
+  const runParallel = async (nodes: PipelineNode[], failFast: boolean, limit: number): Promise<boolean> => {
+    let next = 0;
+    let failed = false;
+    const worker = async () => {
+      while (next < nodes.length) {
+        const i = next++;
+        if (opts.signal?.aborted) {
+          skip([nodes[i]], 'cancelled');
+          continue;
+        }
+        if (await runNode(nodes[i], failFast)) failed = true;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, nodes.length) }, worker));
     return failed;
   };
 

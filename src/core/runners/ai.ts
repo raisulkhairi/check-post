@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { Adapter } from '../adapters/types.js';
-import { AiVerdictSchema, SEVERITIES, severityRank, type AiVerdict, type Finding, type Severity, type StageNode } from '../types.js';
+import { AgentError, type Adapter, type AdapterRunResult } from '../adapters/types.js';
+import { AiVerdictParseSchema, AiVerdictSchema, SEVERITIES, severityRank, type AiVerdict, type Finding, type Severity, type StageNode } from '../types.js';
 
 /**
  * JSON Schema sent to the AI; must stay in sync with AiVerdictSchema.
@@ -25,8 +25,13 @@ export function buildSystemPrompt(sensitivePaths: string[], language = 'English'
     '- Severity scale: critical (exploitable now / leaked secret), high (likely exploitable or serious bug), ' +
       'medium (should be fixed soon), low (minor / hardening), info (observation, not a problem).',
     '- If nothing is wrong, return an empty findings array.',
+    '- Cover the whole scope the stage asks for; do not stop after the first findings. Set "complete" to true only ' +
+      'if you did. If you skipped anything (too many matches, files you could not read, a check you could not do ' +
+      'with read-only tools), set "complete" to false and list each skipped part in "not_checked". ' +
+      'If your summary says you did not read, check, or follow up something, "complete" must be false. ' +
+      'An honest incomplete answer is better than a partial audit reported as clean.',
     `- Write summary, message and suggestion in ${language}, regardless of the language of the code or instructions.`,
-    '- Your final answer MUST be the structured output object: { summary, findings[] }.',
+    '- Your final answer MUST be the structured output object: { summary, findings[], complete, not_checked[] }.',
   ].join('\n');
 }
 
@@ -93,18 +98,25 @@ export async function runAiStage(
   const denied: string[] = [];
 
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const res = await adapter.run({
-      cwd: opts.cwd,
-      systemPrompt,
-      prompt,
-      schema: VERDICT_JSON_SCHEMA,
-      model: stage.config.model ?? opts.model,
-      denyPaths: opts.sensitivePaths,
-      maxBudgetUsd: stage.config.max_budget_usd ?? opts.maxBudgetUsd,
-      timeoutMs: opts.timeoutMs,
-      signal: opts.signal,
-      onActivity: (line) => opts.onLog(`[AI] ${line}`),
-    });
+    let res: AdapterRunResult;
+    try {
+      res = await adapter.run({
+        cwd: opts.cwd,
+        systemPrompt,
+        prompt,
+        schema: VERDICT_JSON_SCHEMA,
+        model: stage.config.model ?? opts.model,
+        denyPaths: opts.sensitivePaths,
+        maxBudgetUsd: stage.config.max_budget_usd ?? opts.maxBudgetUsd,
+        timeoutMs: opts.timeoutMs,
+        signal: opts.signal,
+        onActivity: (line) => opts.onLog(`[AI] ${line}`),
+      });
+    } catch (err) {
+      // Keep the cost of earlier attempts and of the failed one in the stage result.
+      const failedCost = err instanceof AgentError ? (err.costUsd ?? 0) : 0;
+      throw new AgentError((err as Error).message, cost + failedCost || undefined);
+    }
     cost += res.costUsd ?? 0;
     denied.push(...res.deniedReads);
 
@@ -116,14 +128,14 @@ export async function runAiStage(
         candidate = null;
       }
     }
-    const parsed = AiVerdictSchema.safeParse(candidate);
+    const parsed = AiVerdictParseSchema.safeParse(candidate);
     if (parsed.success) {
       return { verdict: { ...parsed.data, findings: sortFindings(parsed.data.findings) }, costUsd: cost, deniedReads: denied };
     }
     opts.onLog(`[AI] answer did not match the required format (attempt ${attempt}/2)`);
     prompt =
       buildStagePrompt(stage, opts.command) +
-      `\n\nIMPORTANT: your previous answer was not valid. Return ONLY the structured object with "summary" and "findings" (severity one of ${SEVERITIES.join(', ')}).`;
+      `\n\nIMPORTANT: your previous answer was not valid. Return ONLY the structured object with "summary", "findings", "complete" and "not_checked" (severity one of ${SEVERITIES.join(', ')}).`;
   }
-  throw new Error('AI did not return a validly formatted answer after 2 attempts');
+  throw new AgentError('AI did not return a validly formatted answer after 2 attempts', cost || undefined);
 }

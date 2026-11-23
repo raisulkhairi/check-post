@@ -29,3 +29,11 @@ export interface Adapter {
   detect(): Promise<{ installed: boolean; version?: string }>;
   run(options: AdapterRunOptions): Promise<AdapterRunResult>;
 }
+
+/** An agent run that failed; carries what it cost so far so the run total stays accurate. */
+export class AgentError extends Error {
+  constructor(message: string, readonly costUsd?: number) {
+    super(message);
+    this.name = 'AgentError';
+  }
+}

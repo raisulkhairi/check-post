@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Adapter, AdapterRunOptions } from '../src/core/adapters/types.js';
+import { AgentError, type Adapter, type AdapterRunOptions } from '../src/core/adapters/types.js';
+import { describeFailure } from '../src/core/adapters/claude-code.js';
 import { discoverPipeline } from '../src/core/discovery.js';
 import type { PipelineEvent } from '../src/core/events.js';
 import { buildStagePrompt, isBlocking } from '../src/core/runners/ai.js';
@@ -139,6 +140,96 @@ describe('scheduler', () => {
     expect(adapter.calls[0].systemPrompt).toContain('in Indonesian');
   });
 
+  it('an incomplete audit fails the stage by default, or only warns with on_incomplete: warn', async () => {
+    const adapter = mockAdapter(() => ({ summary: 's', findings: [], complete: false, not_checked: ['GTM call sites'] }));
+    const { status, out } = await run(
+      {
+        'pipeline.md': '---\nfail_fast: false\n---\n',
+        '01-strict.md': ai('x'),
+        '02-lenient.md': ai('y', 'on_incomplete: warn\n'),
+      },
+      adapter,
+    );
+    expect(status).toEqual({ '01-strict': 'failed', '02-lenient': 'passed' });
+    expect(out.results['01-strict'].reasons).toEqual(['audit incomplete: GTM call sites']);
+    expect(out.results['02-lenient'].reasons?.[0]).toContain('on_incomplete: warn');
+    expect(adapter.calls[0].systemPrompt).toContain('not_checked');
+  });
+
+  it('an answer without completeness fields counts as complete', async () => {
+    const adapter = mockAdapter(() => ({ summary: 's', findings: [] }));
+    const { status, out } = await run({ '01-a.md': ai('x') }, adapter);
+    expect(status['01-a']).toBe('passed');
+    expect(out.results['01-a'].reasons).toBeUndefined();
+  });
+
+  it('require_exit_zero fails command+ai on a non-zero exit even without findings', async () => {
+    const adapter = mockAdapter(() => ({ summary: 'ok', findings: [] }));
+    const { status, out } = await run(
+      { '01-a.md': '---\nrun: exit 2\nrequire_exit_zero: true\n---\nExplain the result\n' },
+      adapter,
+    );
+    expect(status['01-a']).toBe('failed');
+    expect(out.results['01-a'].reasons).toEqual(['command exited with code 2 (require_exit_zero)']);
+    expect(adapter.calls).toHaveLength(1); // the AI still explains the output
+  });
+
+  it('group and stage sensitive_paths add to the inherited ones', async () => {
+    const adapter = mockAdapter(() => ({ summary: 'ok', findings: [] }));
+    await run(
+      {
+        'pipeline.md': '---\nsensitive_paths: [secret/**]\n---\n',
+        '01-g/_group.md': '---\nsensitive_paths: [nginx/.htpasswd]\n---\n',
+        '01-g/01-a.md': ai('A', 'sensitive_paths: [infra/*.tfvars]\n'),
+        '01-g/02-b.md': ai('B'),
+        '02-c.md': ai('C'),
+      },
+      adapter,
+    );
+    const deny = (marker: string) => adapter.calls.find((c) => c.prompt.includes(marker))!.denyPaths;
+    expect(deny('A')).toEqual(expect.arrayContaining(['.env', 'secret/**', 'nginx/.htpasswd', 'infra/*.tfvars']));
+    expect(deny('B')).toContain('nginx/.htpasswd');
+    expect(deny('B')).not.toContain('infra/*.tfvars');
+    expect(deny('C')).not.toContain('nginx/.htpasswd');
+  });
+
+  it('max_parallel limits how many children of a parallel group run at once', async () => {
+    let running = 0;
+    let peak = 0;
+    const adapter: Adapter = {
+      id: 'mock',
+      label: 'Mock',
+      detect: async () => ({ installed: true }),
+      run: async () => {
+        peak = Math.max(peak, ++running);
+        await new Promise((r) => setTimeout(r, 50));
+        running--;
+        return { output: { summary: 'ok', findings: [] }, rawText: '', deniedReads: [] };
+      },
+    };
+    const files: Record<string, string> = { '01-g/_group.md': '---\nparallel: true\nmax_parallel: 2\n---\n' };
+    for (let i = 1; i <= 5; i++) files[`01-g/0${i}-s.md`] = ai(`stage ${i}`);
+    const { out, order } = await run(files, adapter);
+    expect(out.passed).toBe(true);
+    expect(peak).toBe(2);
+    expect(order).toEqual(['01-g/01-s', '01-g/02-s', '01-g/03-s', '01-g/04-s', '01-g/05-s']);
+  });
+
+  it('an agent error keeps its message and cost', async () => {
+    const adapter: Adapter = {
+      id: 'mock',
+      label: 'Mock',
+      detect: async () => ({ installed: true }),
+      run: async () => {
+        throw new AgentError('hit the budget limit of $1', 1.23);
+      },
+    };
+    const { status, out } = await run({ '01-a.md': ai('x') }, adapter);
+    expect(status['01-a']).toBe('error');
+    expect(out.results['01-a'].error).toBe('hit the budget limit of $1');
+    expect(out.results['01-a'].costUsd).toBe(1.23);
+  });
+
   it('cancelling skips the following stages', async () => {
     const root = fixture({ '01-a.md': cmd('sleep 5'), '02-b.md': cmd('true') });
     const pipeline = discoverPipeline(root);
@@ -169,10 +260,42 @@ describe('ai helpers', () => {
   });
 });
 
+describe('claude adapter', () => {
+  it('explains a budget stop with what to change', () => {
+    const msg = describeFailure({ subtype: 'error_max_budget_usd', num_turns: 21 }, 0.5, 0.61);
+    expect(msg).toContain('budget limit of $0.5');
+    expect(msg).toContain('spent $0.610 over 21 turns');
+    expect(msg).toContain('max_budget_usd');
+  });
+
+  it('uses the error list for other failures', () => {
+    expect(describeFailure({ subtype: 'error_during_execution', errors: ['boom'] }, 1, 0)).toBe('Claude Code error: boom');
+  });
+});
+
 describe('verdict schema', () => {
   it('has no $schema key (rejected by Claude Code)', async () => {
     const { VERDICT_JSON_SCHEMA } = await import('../src/core/runners/ai.js');
     expect(VERDICT_JSON_SCHEMA).not.toHaveProperty('$schema');
     expect(VERDICT_JSON_SCHEMA).toHaveProperty('properties.findings');
+    expect((VERDICT_JSON_SCHEMA as { required: string[] }).required).toEqual(
+      expect.arrayContaining(['summary', 'findings', 'complete', 'not_checked']),
+    );
+  });
+});
+
+describe('definitions hash', () => {
+  it('changes when a stage file changes, and only then', async () => {
+    const { definitionsHash } = await import('../src/core/gate.js');
+    const { writeFileSync } = await import('node:fs');
+    const path = await import('node:path');
+    const root = fixture({ 'pipeline.md': '---\nmodel: haiku\n---\n', '01-g/_group.md': '---\nparallel: true\n---\n', '01-g/01-a.md': ai('x') });
+    const first = definitionsHash(discoverPipeline(root));
+    expect(definitionsHash(discoverPipeline(root))).toBe(first);
+    writeFileSync(path.join(root, 'checkpost/01-g/_group.md'), '---\nparallel: false\n---\n');
+    const second = definitionsHash(discoverPipeline(root));
+    expect(second).not.toBe(first);
+    writeFileSync(path.join(root, 'checkpost/01-g/01-a.md'), ai('y'));
+    expect(definitionsHash(discoverPipeline(root))).not.toBe(second);
   });
 });

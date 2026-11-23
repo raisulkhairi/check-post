@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { execa } from 'execa';
-import { allStages } from './discovery.js';
+import { allStages, flatten, GROUP_FILE, PIPELINE_FILE } from './discovery.js';
 import { isBlockingFailure } from './scheduler.js';
 import type { Pipeline, StageResult } from './types.js';
 
@@ -61,15 +61,22 @@ export async function readGitState(cwd: string): Promise<GitState> {
   };
 }
 
-/** Hash of every stage definition, so editing a .md file invalidates old results. */
+/**
+ * Hash of the stage definition files (pipeline.md, every _group.md and stage .md), so editing one invalidates
+ * old results. It hashes the files as written, not the parsed config, so a check-post upgrade that adds a
+ * config default does not throw away results.
+ */
 export function definitionsHash(pipeline: Pipeline): string {
   const h = createHash('sha256');
-  h.update(JSON.stringify(pipeline.config));
-  for (const s of allStages(pipeline.children)) {
-    h.update(s.id);
-    h.update(JSON.stringify(s.config));
-    h.update(s.body);
-    h.update(s.context.join('\n'));
+  const add = (file: string) => {
+    h.update(path.relative(pipeline.dir, file));
+    h.update('\0');
+    h.update(existsSync(file) ? readFileSync(file) : '');
+    h.update('\0');
+  };
+  add(path.join(pipeline.dir, PIPELINE_FILE));
+  for (const { node } of flatten(pipeline.children)) {
+    add(node.kind === 'stage' ? node.file : path.join(node.dir, GROUP_FILE));
   }
   return h.digest('hex').slice(0, 16);
 }

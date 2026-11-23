@@ -95,22 +95,50 @@ AI summaries and findings are written in the language set by `language:` in `pip
 | `timeout` | stage | 15m (command), 10m (AI) | `30s`, `5m`, `1h`, or a number of seconds |
 | `fail_on` | stage | `high` | `critical`, `high`, `medium`, `low`, `info` |
 | `paths` | stage | – | limit the files the AI inspects |
+| `require_exit_zero` | stage | `false` | `run:` + body: a non-zero exit code fails the stage whatever the AI says |
+| `on_incomplete` | stage, pipeline | `fail` | `fail` or `warn` when the AI reports it could not check the whole scope |
 | `allow_failure` | stage | `false` | a failure does not block the gate |
 | `enabled` | stage, group | `true` | |
 | `name` | stage, group | file name | display name |
 | `model`, `max_budget_usd` | stage, pipeline | `sonnet`, `1` | |
 | `language` | pipeline | `English` | language of AI summaries and findings |
 | `parallel` | group | `false` | run the group's children concurrently |
+| `max_parallel` | group, pipeline | `4` | most children of a parallel group running at the same time |
 | `fail_fast` | group, pipeline | `true` | stop at the first failure |
 | `require_clean_tree` | pipeline | `true` | gate is RED when there are uncommitted changes |
-| `sensitive_paths` | pipeline | `.env*`, `.npmrc`, `*.pem`, `*.key` | paths the AI must never read |
+| `sensitive_paths` | pipeline, group, stage | `.env*`, `.npmrc`, `*.pem`, `*.key` | paths the AI must never read; a group or stage adds to the inherited list |
 | `confirm_ai` | pipeline | `true` | ask once before using your AI quota |
 
 The body of `pipeline.md` and `_group.md` is passed as context to every AI stage below it.
 
+Helper scripts can live next to the stages in a folder that starts with `_` (for example `checkpost/_scripts/`).
+It is ignored by discovery, and stages call it with `run: node checkpost/_scripts/check.mjs`.
+
+### Deterministic checks with an AI report
+When a script decides pass or fail and the AI only explains the result, set `require_exit_zero: true`:
+```md
+---
+run: node checkpost/_scripts/sonarqube-gate.mjs
+require_exit_zero: true
+---
+Summarize the quality gate result and list the blocking issues.
+```
+Without it, a `run:` + body stage passes or fails on the AI's findings alone, so the AI can overrule the exit code.
+
+### Incomplete audits
+Every AI answer says whether it covered the whole scope (`complete`) and what it skipped (`not_checked`).
+An incomplete audit fails the stage by default, so a partial check never shows up as green. Use
+`on_incomplete: warn` for broad, advisory stages where a best-effort answer is fine.
+
+### Budget
+`max_budget_usd` is a safety limit per AI stage, not a quality setting: Claude Code stops when it is reached and the
+stage ends as `error` with the amount spent. Raise it for broad stages (`max_budget_usd: 3`), or narrow `paths`.
+The check runs between turns, so the final cost can be a little above the limit.
+
 ## AI stage safety
 - The AI only gets read tools (Read, Grep, Glob). It cannot change files or run commands.
-- `sensitive_paths` are blocked with Claude Code permission deny rules. Attempts to read them show up in the log as `access blocked`.
+- `sensitive_paths` are blocked with Claude Code permission deny rules, so a rule such as "never read nginx/.htpasswd" belongs in frontmatter, not in the stage text. Attempts to read them show up in the log as `access blocked`.
+- The AI cannot run commands. If a stage needs command output (for example `npx browserslist`), put the command in `run:` and the AI gets its output.
 - Claude Code runs without MCP servers, plugins, or user settings, so the context stays small and a stage costs cents, not dollars.
 - The AI must answer with validated, structured JSON. An invalid answer is retried once. If it is still invalid, the stage ends as `error`, never as passed.
 

@@ -1,7 +1,27 @@
 import { execa } from 'execa';
 import path from 'node:path';
 import { killTree } from '../process.js';
-import type { Adapter, AdapterRunOptions, AdapterRunResult } from './types.js';
+import { AgentError, type Adapter, type AdapterRunOptions, type AdapterRunResult } from './types.js';
+
+/** Turn Claude Code's error result into a message that says what to change. */
+export function describeFailure(final: Record<string, unknown>, maxBudgetUsd: number | undefined, cost: number | undefined): string {
+  const spent = cost !== undefined ? `$${cost.toFixed(3)}` : 'unknown';
+  const turns = typeof final.num_turns === 'number' ? ` over ${final.num_turns} turns` : '';
+  switch (final.subtype) {
+    case 'error_max_budget_usd':
+      return (
+        `hit the budget limit of $${maxBudgetUsd ?? '?'} (spent ${spent}${turns}) before answering. ` +
+        'Raise max_budget_usd in this stage\'s frontmatter, narrow "paths", or split the stage.'
+      );
+    case 'error_max_turns':
+      return `reached the turn limit${turns} before answering. Narrow "paths" or split the stage.`;
+    default: {
+      const errors = Array.isArray(final.errors) ? final.errors.join('; ') : '';
+      const detail = errors || (final.result != null ? String(final.result) : '') || String(final.subtype ?? 'unknown');
+      return `Claude Code error: ${detail}`;
+    }
+  }
+}
 
 const READ_TOOLS = ['Read', 'Grep', 'Glob'];
 
@@ -130,15 +150,14 @@ export function createClaudeCodeAdapter(bin = 'claude'): Adapter {
             : stderr.trim() || `claude exited with code ${done.exitCode}`;
         throw new Error(`Claude Code failed: ${reason}`);
       }
-      if (final.is_error) {
-        throw new Error(`Claude Code error: ${String(final.result ?? final.subtype ?? 'unknown')}`);
-      }
+      const cost = typeof final.total_cost_usd === 'number' ? final.total_cost_usd : undefined;
+      if (final.is_error) throw new AgentError(describeFailure(final, o.maxBudgetUsd, cost), cost);
 
       const denials = (final.permission_denials as Array<{ tool_input?: Record<string, unknown> }> | undefined) ?? [];
       return {
         output: final.structured_output ?? null,
         rawText: String(final.result ?? ''),
-        costUsd: typeof final.total_cost_usd === 'number' ? final.total_cost_usd : undefined,
+        costUsd: cost,
         deniedReads: denials.map((d) => {
           const target = d.tool_input?.file_path ?? d.tool_input?.path ?? d.tool_input?.pattern;
           return typeof target === 'string' ? path.relative(o.cwd, target) || target : '?';

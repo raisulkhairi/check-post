@@ -76,7 +76,7 @@ export function discoverPipeline(root: string, dirName = PIPELINE_DIR): Pipeline
   }
   pipelineConfig.sensitive_paths = [...new Set([...DEFAULT_SENSITIVE_PATHS, ...pipelineConfig.sensitive_paths])];
 
-  const walk = (current: string, context: string[], isRoot: boolean): PipelineNode[] => {
+  const walk = (current: string, context: string[], sensitive: string[], isRoot: boolean): PipelineNode[] => {
     const entries = listEntries(current, isRoot);
     const seen = new Map<number, string>();
     for (const e of entries) {
@@ -92,19 +92,21 @@ export function discoverPipeline(root: string, dirName = PIPELINE_DIR): Pipeline
       if (e.isDir) {
         let groupConfig = GroupConfigSchema.parse({});
         let groupContext = context;
+        let groupSensitive = sensitive;
         const groupFile = path.join(e.full, GROUP_FILE);
         if (existsSync(groupFile)) {
           try {
             const { data, body } = parseMarkdown(readFileSync(groupFile, 'utf8'), GroupConfigSchema, rel(groupFile));
             groupConfig = data;
             if (body) groupContext = [...context, body];
+            if (data.sensitive_paths?.length) groupSensitive = [...new Set([...sensitive, ...data.sensitive_paths])];
           } catch (err) {
             if (err instanceof DefinitionError) problems.push(...err.problems);
             else throw err;
           }
         }
         if (!groupConfig.enabled) continue;
-        const children = walk(e.full, groupContext, false);
+        const children = walk(e.full, groupContext, groupSensitive, false);
         if (children.length === 0) {
           problems.push(`${rel(e.full)}/: empty group (no enabled .md stages)`);
           continue;
@@ -139,6 +141,7 @@ export function discoverPipeline(root: string, dirName = PIPELINE_DIR): Pipeline
           config: data,
           body,
           context,
+          sensitivePaths: data.sensitive_paths?.length ? [...new Set([...sensitive, ...data.sensitive_paths])] : sensitive,
         };
         nodes.push(stage);
       } catch (err) {
@@ -149,7 +152,7 @@ export function discoverPipeline(root: string, dirName = PIPELINE_DIR): Pipeline
     return nodes;
   };
 
-  const children = walk(dir, rootContext, true);
+  const children = walk(dir, rootContext, pipelineConfig.sensitive_paths, true);
   if (problems.length === 0 && children.length === 0) {
     problems.push(`${dirName}/: no stages yet. Add a file such as 01-build.md.`);
   }

@@ -30,6 +30,7 @@ export function createPlainRenderer(stages: Map<string, StageNode>, opts: { verb
           write(pc.red(`✖ ${label}`) + tag + (r.error ? pc.red(` · ${r.error}`) : r.summary ? pc.dim(` · ${r.summary}`) : ''));
           if (r.status === 'failed' && stage?.type === 'command' && r.logFile) write(pc.dim(`  log: ${r.logFile}`));
         }
+        for (const reason of r.reasons ?? []) write((r.status === 'failed' ? pc.red : pc.yellow)(`  ⚠ ${reason}`));
         for (const f of r.findings) {
           const blocking = stage ? isBlocking(f, stage.config.fail_on) : false;
           const sev = colorBySeverity[f.severity](f.severity.toUpperCase().padEnd(8));
