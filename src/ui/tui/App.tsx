@@ -6,7 +6,7 @@ import { flatten } from '../../core/discovery.js';
 import type { PipelineEvent } from '../../core/events.js';
 import type { GateResult } from '../../core/gate.js';
 import { isBlocking } from '../../core/runners/ai.js';
-import type { Pipeline, PipelineNode, StageResult, StageStatus } from '../../core/types.js';
+import type { Finding, Pipeline, PipelineNode, StageResult, StageStatus } from '../../core/types.js';
 import { SEVERITY_COLOR, STATUS_COLOR, STATUS_ICON, findingLocation, formatDuration, typeLabel } from '../format.js';
 
 export type Executor = (
@@ -41,7 +41,6 @@ export function App({ pipeline, header, execute, initialNodes }: Props) {
   const [selected, setSelected] = useState(0);
   const [follow, setFollow] = useState(true);
   const [view, setView] = useState<'list' | 'detail'>('list');
-  const [detailOffset, setDetailOffset] = useState(0);
   const [running, setRunning] = useState(false);
   const [gate, setGate] = useState<GateResult | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -134,14 +133,7 @@ export function App({ pipeline, header, execute, initialNodes }: Props) {
       } else exit();
       return;
     }
-    if (view === 'detail') {
-      if (key.escape || key.leftArrow || key.return) {
-        setView('list');
-        setDetailOffset(0);
-      } else if (key.upArrow) setDetailOffset((o) => Math.max(0, o - 1));
-      else if (key.downArrow) setDetailOffset((o) => o + 1);
-      return;
-    }
+    if (view === 'detail') return; // the Detail component handles its own keys
     if (key.upArrow) {
       setFollow(false);
       setSelected((i) => Math.max(0, i - 1));
@@ -157,16 +149,23 @@ export function App({ pipeline, header, execute, initialNodes }: Props) {
       if (!running) start();
     } else if (input === 'o' && current) {
       const target = current.kind === 'stage' ? current.file : current.dir;
-      const editor = process.env.CHECKPOST_EDITOR || 'code';
-      const child = spawn(editor, [target], { detached: true, stdio: 'ignore' });
+      const { editor, child } = openInEditor(target);
       child.on('error', () => setNotice(`Could not open editor "${editor}". Set CHECKPOST_EDITOR.`));
-      child.unref();
       setNotice(`Opening ${path.relative(pipeline.root, target)} in ${editor}`);
     }
   });
 
   if (view === 'detail' && current) {
-    return <Detail node={current} state={states[current.id]} log={logs[current.id] ?? []} offset={detailOffset} rows={rows} pipeline={pipeline} />;
+    return (
+      <Detail
+        key={current.id}
+        node={current}
+        state={states[current.id]}
+        log={logs[current.id] ?? []}
+        pipeline={pipeline}
+        onBack={() => setView('list')}
+      />
+    );
   }
 
   const logLines = current ? (logs[current.id] ?? []) : [];
@@ -259,68 +258,196 @@ function GateBox({ gate }: { gate: GateResult }) {
   );
 }
 
+const SEVERITY_ORDER: Finding['severity'][] = ['critical', 'high', 'medium', 'low', 'info'];
+const GUI_EDITORS = new Set(['code', 'code-insiders', 'cursor', 'windsurf', 'codium']);
+
+/** Open a file (optionally at a line) in the configured editor, detached from the TUI. */
+export function openInEditor(file: string, line?: number | null): { editor: string; child: ReturnType<typeof spawn> } {
+  const editor = process.env.CHECKPOST_EDITOR || 'code';
+  const args = line && GUI_EDITORS.has(path.basename(editor)) ? ['-g', `${file}:${line}`] : [file];
+  const child = spawn(editor, args, { detached: true, stdio: 'ignore' });
+  child.unref();
+  return { editor, child };
+}
+
+/** Rough number of terminal rows a finding takes, used to keep the selection on screen. */
+function findingHeight(f: Finding, width: number): number {
+  const rowsFor = (text: string) => Math.max(1, Math.ceil(text.length / Math.max(20, width)));
+  return 1 + rowsFor(f.message) + (f.suggestion ? rowsFor('→ ' + f.suggestion) : 0) + 1;
+}
+
 function Detail({
   node,
   state,
   log,
-  offset,
-  rows,
   pipeline,
+  onBack,
 }: {
   node: PipelineNode;
   state?: NodeState;
   log: string[];
-  offset: number;
-  rows: number;
   pipeline: Pipeline;
+  onBack: () => void;
 }) {
+  const { rows, columns } = useWindowSize();
   const result = state?.result;
-  const lines: React.ReactNode[] = [];
-  if (node.kind === 'group') {
-    lines.push(<Text key="g">Group with {node.children.length} items. Select a stage inside it to see details.</Text>);
-  } else {
-    if (result?.summary) lines.push(<Text key="s">{result.summary}</Text>);
-    if (result?.error) lines.push(<Text key="e" color="red">Error: {result.error}</Text>);
-    if (result?.findings.length) {
-      result.findings.forEach((f, i) => {
-        const blocking = isBlocking(f, node.config.fail_on);
-        lines.push(
-          <Box key={`f${i}`} flexDirection="column" marginTop={1}>
-            <Text>
-              <Text color={SEVERITY_COLOR[f.severity]} bold>
-                {f.severity.toUpperCase().padEnd(9)}
-              </Text>
-              <Text underline>{findingLocation(f)}</Text>
-              {blocking && <Text color="red"> (blocking)</Text>}
-            </Text>
-            <Text>{'         '}{f.message}</Text>
-            {f.suggestion && <Text color="gray">{'         '}→ {f.suggestion}</Text>}
-          </Box>,
-        );
-      });
-    } else if (node.type === 'command' || !result) {
-      lines.push(<Text key="lt" color="gray">Log:</Text>);
-      log.forEach((line, i) => lines.push(<Text key={`l${i}`}>  {line}</Text>));
-    }
-    if (result?.logFile) lines.push(<Text key="lf" color="gray">Full log: {path.relative(pipeline.root, result.logFile)}</Text>);
-  }
-  const visible = Math.max(5, rows - 6);
-  const start = Math.min(offset, Math.max(0, lines.length - visible));
+  const findings = result?.findings ?? [];
+  const [selected, setSelected] = useState(0);
+  const [logOffset, setLogOffset] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const top = useRef(0);
+
+  const failOn = node.kind === 'stage' ? node.config.fail_on : 'high';
+  const numWidth = String(findings.length).length;
+  const bodyIndent = 2 + 2 * numWidth + 1 + 2; // "❯ " + "n/N" + gap
+  const bodyWidth = columns - bodyIndent - 2;
+
+  useInput((input, key) => {
+    if (key.escape || key.leftArrow || key.backspace) return onBack();
+    if (findings.length) {
+      if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
+      else if (key.downArrow) setSelected((i) => Math.min(findings.length - 1, i + 1));
+      else if (key.pageUp) setSelected((i) => Math.max(0, i - 5));
+      else if (key.pageDown) setSelected((i) => Math.min(findings.length - 1, i + 5));
+      else if (input === 'g') setSelected(0);
+      else if (input === 'G') setSelected(findings.length - 1);
+      else if (input === 'o' || key.return) {
+        const f = findings[selected];
+        if (!f?.file) return setNotice('This finding has no file location.');
+        const { editor, child } = openInEditor(path.resolve(pipeline.root, f.file), f.line);
+        child.on('error', () => setNotice(`Could not open editor "${editor}". Set CHECKPOST_EDITOR.`));
+        setNotice(`Opening ${findingLocation(f)} in ${editor}`);
+      }
+    } else if (key.upArrow) setLogOffset((o) => Math.max(0, o - 1));
+    else if (key.downArrow) setLogOffset((o) => Math.min(Math.max(0, log.length - 1), o + 1));
+  });
+
+  const status = state?.status ?? 'pending';
   const header =
     node.kind === 'stage'
-      ? `${node.name} · ${typeLabel(node)}${node.kind === 'stage' && node.type !== 'command' ? ` · fail_on: ${node.config.fail_on}` : ''}`
+      ? `${node.name} · ${typeLabel(node)}${node.type !== 'command' ? ` · fail_on: ${node.config.fail_on}` : ''}`
       : node.name;
+  const counts = SEVERITY_ORDER.map((sev) => [sev, findings.filter((f) => f.severity === sev).length] as const).filter(([, n]) => n > 0);
+  const blockingCount = findings.filter((f) => isBlocking(f, failOn)).length;
+
+  // Fixed chrome: header, rule, summary (estimated), counts, rule, ..., rule, footer, notice.
+  const summaryRows = result?.summary ? Math.ceil(result.summary.length / Math.max(20, columns - 2)) : 0;
+  const available = Math.max(4, rows - 7 - summaryRows - (result?.error ? 1 : 0));
+
+  let body: React.ReactNode;
+  let position = '';
+  if (node.kind === 'group') {
+    body = <Text>Group with {node.children.length} items. Select a stage inside it to see details.</Text>;
+  } else if (findings.length) {
+    // Keep the selected finding visible: scroll the window only when the selection leaves it.
+    const heights = findings.map((f) => findingHeight(f, bodyWidth));
+    const fits = (from: number, to: number) => heights.slice(from, to + 1).reduce((a, b) => a + b, 0) <= available;
+    if (selected < top.current) top.current = selected;
+    while (top.current < selected && !fits(top.current, selected)) top.current++;
+    let end = top.current;
+    while (end + 1 < findings.length && fits(top.current, end + 1)) end++;
+    const hiddenAbove = top.current;
+    const hiddenBelow = findings.length - 1 - end;
+    position = `${selected + 1}/${findings.length}`;
+
+    body = (
+      <Box flexDirection="column">
+        {hiddenAbove > 0 && <Text color="gray">  ↑ {hiddenAbove} more above</Text>}
+        {findings.slice(top.current, end + 1).map((f, i) => {
+          const index = top.current + i;
+          const isSel = index === selected;
+          const blocking = isBlocking(f, failOn);
+          const num = `${String(index + 1).padStart(numWidth)}/${findings.length}`;
+          return (
+            <Box key={index} flexDirection="column" marginBottom={1}>
+              <Text>
+                <Text color="cyan" bold>{isSel ? '❯ ' : '  '}</Text>
+                <Text inverse={isSel} bold={isSel} color={isSel ? undefined : 'gray'}>{num}</Text>
+                {'  '}
+                <Text backgroundColor={SEVERITY_COLOR[f.severity]} color="black" bold>
+                  {` ${f.severity.toUpperCase()} `.padEnd(10)}
+                </Text>
+                {blocking ? <Text color="red" bold> ● blocking</Text> : <Text color="gray">{'           '}</Text>}
+                {'  '}
+                <Text underline={isSel} bold={isSel}>{findingLocation(f) || '(no location)'}</Text>
+              </Text>
+              <Box paddingLeft={bodyIndent}>
+                <Text color={isSel ? undefined : 'gray'}>{f.message}</Text>
+              </Box>
+              {f.suggestion && (
+                <Box paddingLeft={bodyIndent}>
+                  <Text color={isSel ? 'green' : 'gray'}>→ {f.suggestion}</Text>
+                </Box>
+              )}
+            </Box>
+          );
+        })}
+        {hiddenBelow > 0 && <Text color="gray">  ↓ {hiddenBelow} more below</Text>}
+      </Box>
+    );
+  } else {
+    const visible = Math.max(4, available);
+    const start = Math.min(logOffset, Math.max(0, log.length - visible));
+    if (log.length) position = `lines ${start + 1}-${Math.min(log.length, start + visible)}/${log.length}`;
+    body = (
+      <Box flexDirection="column">
+        {result?.status === 'passed' && node.type !== 'command' && <Text color="green">No findings.</Text>}
+        {log.slice(start, start + visible).map((line, i) => (
+          <Text key={i} wrap="truncate-end">
+            {'  '}
+            {line}
+          </Text>
+        ))}
+        {result?.logFile && <Text color="gray">Full log: {path.relative(pipeline.root, result.logFile)}</Text>}
+      </Box>
+    );
+  }
+
+  const rule = <Text color="gray">{'─'.repeat(Math.max(20, Math.min(columns - 1, 100)))}</Text>;
   return (
     <Box flexDirection="column">
       <Text bold>
         {' '}
-        <Text color={STATUS_COLOR[state?.status ?? 'pending']}>{STATUS_ICON[state?.status ?? 'pending']}</Text> {header}
+        <Text color={STATUS_COLOR[status]}>{STATUS_ICON[status]}</Text> {header}
         {result?.costUsd ? <Text color="gray"> · ${result.costUsd.toFixed(3)}</Text> : null}
       </Text>
-      <Text color="gray">{'─'.repeat(60)}</Text>
-      {lines.slice(start, start + visible)}
-      <Text color="gray">{'─'.repeat(60)}</Text>
-      <Text color="gray"> ↑↓ scroll  esc back  q quit</Text>
+      {rule}
+      {result?.summary && (
+        <Box paddingLeft={1}>
+          <Text color="gray">{result.summary}</Text>
+        </Box>
+      )}
+      {result?.error && (
+        <Box paddingLeft={1}>
+          <Text color="red">Error: {result.error}</Text>
+        </Box>
+      )}
+      {findings.length > 0 && (
+        <Text>
+          {' '}
+          <Text bold>{findings.length} finding{findings.length === 1 ? '' : 's'}</Text>
+          {counts.map(([sev, n]) => (
+            <Text key={sev}>
+              {'  '}
+              <Text color={SEVERITY_COLOR[sev]}>■</Text> {n} {sev}
+            </Text>
+          ))}
+          <Text color={blockingCount ? 'red' : 'green'}>
+            {'  ·  '}
+            {blockingCount ? `${blockingCount} blocking (fail_on: ${failOn})` : `none blocking (fail_on: ${failOn})`}
+          </Text>
+        </Text>
+      )}
+      {rule}
+      {body}
+      {rule}
+      {notice && <Text color="yellow"> {notice}</Text>}
+      <Text color="gray">
+        {findings.length
+          ? ' ↑↓ select  PgUp/PgDn jump  g/G first/last  enter/o open in editor  esc back  q quit'
+          : ' ↑↓ scroll  esc back  q quit'}
+        {position && <Text color="cyan">{'   '}{position}</Text>}
+      </Text>
     </Box>
   );
 }
