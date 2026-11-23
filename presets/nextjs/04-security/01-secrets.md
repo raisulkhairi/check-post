@@ -1,19 +1,19 @@
 ---
 fail_on: high
 ---
-# Secrets & API key
+# Secrets & API keys
 
-Cari kredensial yang di-hardcode di source code yang ikut di-commit:
-- API key, token, password, private key, connection string berisi password
-- URL yang menyertakan kredensial (`https://user:pass@...`)
-- Token JWT atau bearer token yang ditulis langsung
+Look for credentials hardcoded in committed source code:
+- API keys, tokens, passwords, private keys, connection strings containing passwords
+- URLs with embedded credentials (`https://user:pass@...`)
+- JWTs or bearer tokens written inline
 
-Cara kerja:
-1. Pakai Grep dengan pola seperti `api[_-]?key`, `secret`, `token`, `password`, `Bearer `, `-----BEGIN`, `sk_live`, `AKIA`.
-2. Baca konteks setiap hasil untuk memastikan nilainya benar-benar rahasia.
+How to work:
+1. Use Grep with patterns such as `api[_-]?key`, `secret`, `token`, `password`, `Bearer `, `-----BEGIN`, `sk_live`, `AKIA`.
+2. Read the context of every match to confirm the value is actually secret.
 
 Severity:
-- critical: secret asli yang terlihat aktif
-- high: kemungkinan besar secret asli
-- low: placeholder atau contoh (mis. `xxx`, `changeme`, `your-api-key`)
-Abaikan file test, mock, dan fixture kecuali isinya terlihat seperti secret asli.
+- critical: a real secret that looks active
+- high: very likely a real secret
+- low: placeholder or example (e.g. `xxx`, `changeme`, `your-api-key`)
+Ignore test, mock, and fixture files unless the value looks like a real secret.

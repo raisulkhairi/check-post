@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'] as const;
 export type Severity = (typeof SEVERITIES)[number];
 
-/** Peringkat severity: angka lebih kecil = lebih parah. */
+/** Severity rank: lower number = more severe. */
 export const severityRank = (s: Severity): number => SEVERITIES.indexOf(s);
 
 const duration = z.union([z.number().positive(), z.string().regex(/^\d+(\.\d+)?\s*(ms|s|m|h)?$/)]);
@@ -11,7 +11,7 @@ const duration = z.union([z.number().positive(), z.string().regex(/^\d+(\.\d+)?\
 export const StageConfigSchema = z
   .object({
     name: z.string().optional(),
-    // YAML membaca `run: true` atau `run: 123` sebagai boolean/angka; perlakukan sebagai perintah.
+    // YAML reads `run: true` or `run: 123` as a boolean/number; treat it as a command.
     run: z.union([z.string(), z.number(), z.boolean()]).transform(String).optional(),
     timeout: duration.optional(),
     fail_on: z.enum(SEVERITIES).default('high'),
@@ -52,6 +52,8 @@ export const PipelineConfigSchema = z
     name: z.string().optional(),
     agent: z.string().default('claude-code'),
     model: z.string().default('sonnet'),
+    /** Language for AI summaries and findings, e.g. English or Indonesian. */
+    language: z.string().min(1).default('English'),
     fail_fast: z.boolean().default(true),
     require_clean_tree: z.boolean().default(true),
     sensitive_paths: z.array(z.string()).default([]),
@@ -65,14 +67,14 @@ export type StageType = 'command' | 'ai' | 'command+ai';
 
 export interface StageNode {
   kind: 'stage';
-  /** Path relatif terhadap folder pipeline tanpa `.md`, mis. `04-security/02-xss-audit`. */
+  /** Path relative to the pipeline folder without `.md`, e.g. `04-security/02-xss-audit`. */
   id: string;
   name: string;
   file: string;
   type: StageType;
   config: StageConfig;
   body: string;
-  /** Konteks warisan dari pipeline.md dan _group.md induk, dari luar ke dalam. */
+  /** Context inherited from pipeline.md and parent _group.md files, outermost first. */
   context: string[];
 }
 
@@ -89,9 +91,9 @@ export interface GroupNode {
 export type PipelineNode = StageNode | GroupNode;
 
 export interface Pipeline {
-  /** Root project (cwd tempat perintah dijalankan). */
+  /** Project root (cwd where commands run). */
   root: string;
-  /** Folder definisi stage, mis. `<root>/checkpost`. */
+  /** Stage definition folder, e.g. `<root>/checkpost`. */
   dir: string;
   config: PipelineConfig;
   children: PipelineNode[];

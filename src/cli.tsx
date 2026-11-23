@@ -8,9 +8,9 @@ import { statusCommand } from './commands/status.js';
 const program = new Command();
 program
   .name('checkpost')
-  .description('Pipeline CI/CD lokal: stage dari file Markdown, dijalankan oleh AI CLI')
+  .description('Local CI/CD pipeline: stages are Markdown files, run by an AI CLI')
   .version('0.1.0')
-  .option('-C, --cwd <dir>', 'root project', process.cwd());
+  .option('-C, --cwd <dir>', 'project root', process.cwd());
 
 const cwd = () => program.opts<{ cwd: string }>().cwd;
 const finish = (code: number) => {
@@ -19,12 +19,12 @@ const finish = (code: number) => {
 
 program
   .command('init')
-  .description('buat folder checkpost/ dari preset')
-  .addOption(new Option('--preset <name>', 'preset stage').choices(['angular', 'nextjs', 'node', 'empty']))
-  .addOption(new Option('--share <mode>', 'simpan lokal saja atau bagikan ke tim').choices(['local', 'team']))
-  .option('--no-slash-command', 'jangan pasang slash command /checkpost')
-  .option('-y, --yes', 'pakai default tanpa bertanya')
-  .option('--force', 'timpa folder checkpost/ yang sudah ada')
+  .description('create the checkpost/ folder from a preset')
+  .addOption(new Option('--preset <name>', 'stage preset').choices(['angular', 'nextjs', 'node', 'empty']))
+  .addOption(new Option('--share <mode>', 'keep local only or share with the team').choices(['local', 'team']))
+  .option('--no-slash-command', 'do not install the /checkpost slash command')
+  .option('-y, --yes', 'use defaults without prompting')
+  .option('--force', 'overwrite an existing checkpost/ folder')
   .action(async (o) => {
     const slashCommand = process.argv.includes('--no-slash-command') ? false : o.yes ? true : undefined;
     finish(await initCommand({ cwd: cwd(), preset: o.preset, share: o.share, slashCommand, yes: o.yes, force: o.force }));
@@ -32,24 +32,24 @@ program
 
 program
   .command('list')
-  .description('tampilkan urutan stage tanpa menjalankannya')
-  .option('--json', 'output JSON')
+  .description('show the stage order without running it')
+  .option('--json', 'JSON output')
   .action((o) => finish(listCommand({ cwd: cwd(), json: o.json })));
 
 program
   .command('run')
-  .argument('[stage]', 'jalankan satu stage atau grup saja (id atau nama)')
-  .description('jalankan pipeline')
-  .option('--ci', 'mode non-interaktif (otomatis bila bukan terminal)')
-  .option('--json', 'cetak hasil akhir sebagai JSON di stdout')
-  .option('-y, --yes', 'lewati konfirmasi pemakaian AI')
-  .option('-v, --verbose', 'tampilkan seluruh log perintah di mode CI')
+  .argument('[stage]', 'run a single stage or group (id or name)')
+  .description('run the pipeline')
+  .option('--ci', 'non-interactive mode (automatic when not a terminal)')
+  .option('--json', 'print the final result as JSON on stdout')
+  .option('-y, --yes', 'skip the AI usage confirmation')
+  .option('-v, --verbose', 'show full command logs in CI mode')
   .action(async (stage, o) => finish(await runCommand(stage, { cwd: cwd(), ci: o.ci, json: o.json, yes: o.yes, verbose: o.verbose })));
 
 program
   .command('status')
-  .description('cek gate: GREEN (boleh deploy) atau RED; exit code 0/1')
-  .option('--json', 'output JSON')
+  .description('check the gate: GREEN (ok to deploy) or RED; exit code 0/1')
+  .option('--json', 'JSON output')
   .action(async (o) => finish(await statusCommand({ cwd: cwd(), json: o.json })));
 
 program.parseAsync().catch((err) => {

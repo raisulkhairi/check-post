@@ -11,7 +11,7 @@ export const AGENTS: Record<string, { label: string; available: boolean; create?
 
 export function getAdapter(id: string): Adapter {
   const agent = AGENTS[id];
-  if (!agent) throw new Error(`Agent "${id}" tidak dikenal. Pilihan: ${Object.keys(AGENTS).join(', ')}`);
-  if (!agent.create) throw new Error(`Agent "${agent.label}" belum didukung. Gunakan claude-code untuk saat ini.`);
+  if (!agent) throw new Error(`Unknown agent "${id}". Options: ${Object.keys(AGENTS).join(', ')}`);
+  if (!agent.create) throw new Error(`Agent "${agent.label}" is not supported yet. Use claude-code for now.`);
   return agent.create();
 }

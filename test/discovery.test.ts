@@ -6,7 +6,7 @@ import { ai, cmd, fixture } from './helpers.js';
 const ids = (root: string) => flatten(discoverPipeline(root).children).map((r) => `${'  '.repeat(r.depth)}${r.node.id}`);
 
 describe('discovery', () => {
-  it('mengurutkan berdasarkan prefix angka, bukan abjad (2 < 10)', () => {
+  it('orders by numeric prefix, not alphabetically (2 < 10)', () => {
     const root = fixture({
       '10-deploy-check.md': cmd('true'),
       '2-build.md': cmd('true'),
@@ -15,7 +15,7 @@ describe('discovery', () => {
     expect(ids(root)).toEqual(['01-lint', '2-build', '10-deploy-check']);
   });
 
-  it('menaruh item tanpa prefix setelah yang berprefix, urut abjad', () => {
+  it('puts unprefixed items after prefixed ones, alphabetically', () => {
     const root = fixture({
       'zeta.md': cmd('true'),
       'alpha.md': cmd('true'),
@@ -24,7 +24,7 @@ describe('discovery', () => {
     expect(ids(root)).toEqual(['01-first', 'alpha', 'zeta']);
   });
 
-  it('membuang prefix dari nama tampilan, kecuali ada name: di frontmatter', () => {
+  it('strips the prefix from display names unless name: is set', () => {
     const root = fixture({
       '01-unit-test.md': cmd('true'),
       '02-x.md': cmd('true', 'name: Custom Name\n'),
@@ -33,12 +33,12 @@ describe('discovery', () => {
     expect(names).toEqual(['unit-test', 'Custom Name']);
   });
 
-  it('subfolder menjadi grup bersarang dengan _group.md sebagai config', () => {
+  it('subfolders become nested groups configured by _group.md', () => {
     const root = fixture({
       '01-build.md': cmd('true'),
-      '02-security/_group.md': '---\nparallel: true\n---\nKonteks grup\n',
-      '02-security/02-xss.md': ai('cek xss'),
-      '02-security/01-secrets.md': ai('cek secret'),
+      '02-security/_group.md': '---\nparallel: true\n---\nGroup context\n',
+      '02-security/02-xss.md': ai('check xss'),
+      '02-security/01-secrets.md': ai('check secrets'),
       '02-security/03-deep/01-a.md': cmd('true'),
     });
     expect(ids(root)).toEqual([
@@ -53,7 +53,7 @@ describe('discovery', () => {
     expect(group.kind === 'group' && group.config.parallel).toBe(true);
   });
 
-  it('mengabaikan file/folder berawalan _ atau ., file non-md, dan enabled: false', () => {
+  it('ignores _ or . prefixed files/folders, non-md files, and enabled: false', () => {
     const root = fixture({
       '01-build.md': cmd('true'),
       '_draft.md': cmd('true'),
@@ -65,19 +65,19 @@ describe('discovery', () => {
     expect(ids(root)).toEqual(['01-build']);
   });
 
-  it('mewariskan konteks pipeline.md → _group.md → stage', () => {
+  it('inherits context pipeline.md → _group.md → stage', () => {
     const root = fixture({
-      'pipeline.md': '---\nmodel: opus\n---\nKonteks project\n',
-      '01-sec/_group.md': '---\n---\nKonteks grup\n',
-      '01-sec/01-a.md': ai('instruksi'),
+      'pipeline.md': '---\nmodel: opus\n---\nProject context\n',
+      '01-sec/_group.md': '---\n---\nGroup context\n',
+      '01-sec/01-a.md': ai('instructions'),
     });
     const p = discoverPipeline(root);
     expect(p.config.model).toBe('opus');
     const stage = flatten(p.children).find((r) => r.node.kind === 'stage')!.node;
-    expect(stage.context).toEqual(['Konteks project', 'Konteks grup']);
+    expect(stage.context).toEqual(['Project context', 'Group context']);
   });
 
-  it('selalu menambahkan default sensitive_paths', () => {
+  it('always adds the default sensitive_paths', () => {
     const root = fixture({ 'pipeline.md': '---\nsensitive_paths: [src/environments/**]\n---\n', '01-a.md': cmd('true') });
     const paths = discoverPipeline(root).config.sensitive_paths;
     expect(paths).toContain('src/environments/**');
@@ -85,7 +85,7 @@ describe('discovery', () => {
     expect(paths).toContain('.npmrc');
   });
 
-  it('melaporkan semua masalah sekaligus dengan path file', () => {
+  it('reports every problem at once with file paths', () => {
     const root = fixture({
       '01-a.md': cmd('true'),
       '01-b.md': cmd('true'),
@@ -100,19 +100,19 @@ describe('discovery', () => {
     } catch (err) {
       expect(err).toBeInstanceOf(DefinitionError);
       const text = (err as DefinitionError).problems.join('\n');
-      expect(text).toContain('prefix 1 dipakai dua kali');
-      expect(text).toContain('02-empty.md: stage kosong');
+      expect(text).toContain('prefix 1 is used twice');
+      expect(text).toContain('02-empty.md: empty stage');
       expect(text).toMatch(/03-bad\.md: fail_on/);
       expect(text).toMatch(/04-typo\.md/);
-      expect(text).toContain('grup kosong');
+      expect(text).toContain('empty group');
     }
   });
 
-  it('error jelas bila folder checkpost/ tidak ada', () => {
+  it('clear error when the checkpost/ folder is missing', () => {
     expect(() => discoverPipeline('/tmp/does-not-exist-aip')).toThrow(/checkpost init/);
   });
 
-  it('findNode menerima id, id tanpa prefix, atau nama', () => {
+  it('findNode accepts an id, an id without prefixes, or a name', () => {
     const root = fixture({ '01-build.md': cmd('true'), '02-security/01-xss-audit.md': ai('x') });
     const { children } = discoverPipeline(root);
     expect(findNode(children, '02-security')?.id).toBe('02-security');
@@ -124,14 +124,14 @@ describe('discovery', () => {
 });
 
 describe('stage-file', () => {
-  it('menentukan tipe dari isi', () => {
+  it('derives the type from the content', () => {
     expect(stageTypeOf('npm test', '')).toBe('command');
-    expect(stageTypeOf(undefined, 'cek xss')).toBe('ai');
+    expect(stageTypeOf(undefined, 'check xss')).toBe('ai');
     expect(stageTypeOf('gitleaks', 'tinjau')).toBe('command+ai');
     expect(stageTypeOf('  ', '  ')).toBeNull();
   });
 
-  it('parse durasi', () => {
+  it('parses durations', () => {
     expect(parseDuration('30s', 0)).toBe(30_000);
     expect(parseDuration('5m', 0)).toBe(300_000);
     expect(parseDuration('1h', 0)).toBe(3_600_000);

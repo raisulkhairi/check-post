@@ -1,4 +1,4 @@
 ---
 parallel: true
 ---
-Fokus pada keamanan. Laporkan hanya masalah yang benar-benar ada di kode, sertakan file dan baris.
+Focus on security. Report only problems that actually exist in the code, with file and line.

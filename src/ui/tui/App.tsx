@@ -129,7 +129,7 @@ export function App({ pipeline, header, execute, initialNodes }: Props) {
     if (input === 'q' || (key.ctrl && input === 'c')) {
       if (running && controller.current) {
         quitting.current = true;
-        setNotice('Membatalkan stage yang sedang berjalan…');
+        setNotice('Cancelling running stages…');
         controller.current.abort();
       } else exit();
       return;
@@ -151,7 +151,7 @@ export function App({ pipeline, header, execute, initialNodes }: Props) {
     } else if (key.return || key.rightArrow) {
       setView('detail');
     } else if (input === 'r' && current) {
-      if (running) setNotice('Tunggu pipeline selesai sebelum rerun.');
+      if (running) setNotice('Wait for the pipeline to finish before rerunning.');
       else start([current]);
     } else if (input === 'R') {
       if (!running) start();
@@ -159,9 +159,9 @@ export function App({ pipeline, header, execute, initialNodes }: Props) {
       const target = current.kind === 'stage' ? current.file : current.dir;
       const editor = process.env.CHECKPOST_EDITOR || 'code';
       const child = spawn(editor, [target], { detached: true, stdio: 'ignore' });
-      child.on('error', () => setNotice(`Tidak bisa membuka editor "${editor}". Set CHECKPOST_EDITOR.`));
+      child.on('error', () => setNotice(`Could not open editor "${editor}". Set CHECKPOST_EDITOR.`));
       child.unref();
-      setNotice(`Membuka ${path.relative(pipeline.root, target)} di ${editor}`);
+      setNotice(`Opening ${path.relative(pipeline.root, target)} in ${editor}`);
     }
   });
 
@@ -191,7 +191,7 @@ export function App({ pipeline, header, execute, initialNodes }: Props) {
               : '';
         const findings = st.result?.findings ?? [];
         const blocking = node.kind === 'stage' ? findings.filter((f) => isBlocking(f, node.config.fail_on)).length : 0;
-        const tag = node.kind === 'group' ? (node.config.parallel ? '(paralel)' : '') : node.type === 'command' ? '' : `[${typeLabel(node)}]`;
+        const tag = node.kind === 'group' ? (node.config.parallel ? '(parallel)' : '') : node.type === 'command' ? '' : `[${typeLabel(node)}]`;
         const prefix = depth > 0 ? '  '.repeat(depth - 1) + '├ ' : '';
         return (
           <Text key={node.id} inverse={isSel}>
@@ -203,7 +203,7 @@ export function App({ pipeline, header, execute, initialNodes }: Props) {
             {findings.length > 0 && (
               <Text color={blocking ? 'red' : 'yellow'}>
                 {'  '}
-                {findings.length} temuan{blocking ? ` (${blocking} blokir)` : ''}
+                {findings.length} finding{findings.length === 1 ? '' : 's'}{blocking ? ` (${blocking} blocking)` : ''}
               </Text>
             )}
             {st.result?.allowFailure && (st.status === 'failed' || st.status === 'error') && <Text color="yellow"> allow_failure</Text>}
@@ -227,7 +227,7 @@ export function App({ pipeline, header, execute, initialNodes }: Props) {
       {gate && <GateBox gate={gate} />}
       {notice && <Text color="yellow"> {notice}</Text>}
       <Text color="gray">
-        {' '}↑↓ pilih  enter detail  r rerun stage  R rerun semua  o buka .md  q keluar
+        {' '}↑↓ select  enter details  r rerun stage  R rerun all  o open .md  q quit
       </Text>
     </Box>
   );
@@ -239,7 +239,7 @@ function GateBox({ gate }: { gate: GateResult }) {
     return (
       <Box borderStyle="round" borderColor="green" paddingX={1} flexDirection="column">
         <Text color="green" bold>
-          ✔ GATE GREEN · boleh deploy
+          ✔ GATE GREEN · ok to deploy
         </Text>
         <Text color="gray">{sha}</Text>
       </Box>
@@ -248,7 +248,7 @@ function GateBox({ gate }: { gate: GateResult }) {
   return (
     <Box borderStyle="round" borderColor="red" paddingX={1} flexDirection="column">
       <Text color="red" bold>
-        ✖ GATE RED · belum boleh deploy
+        ✖ GATE RED · not ready to deploy
       </Text>
       {gate.reasons.slice(0, 6).map((r, i) => (
         <Text key={i} color="gray">
@@ -277,7 +277,7 @@ function Detail({
   const result = state?.result;
   const lines: React.ReactNode[] = [];
   if (node.kind === 'group') {
-    lines.push(<Text key="g">Grup berisi {node.children.length} item. Pilih stage di dalamnya untuk melihat detail.</Text>);
+    lines.push(<Text key="g">Group with {node.children.length} items. Select a stage inside it to see details.</Text>);
   } else {
     if (result?.summary) lines.push(<Text key="s">{result.summary}</Text>);
     if (result?.error) lines.push(<Text key="e" color="red">Error: {result.error}</Text>);
@@ -291,7 +291,7 @@ function Detail({
                 {f.severity.toUpperCase().padEnd(9)}
               </Text>
               <Text underline>{findingLocation(f)}</Text>
-              {blocking && <Text color="red"> (blokir)</Text>}
+              {blocking && <Text color="red"> (blocking)</Text>}
             </Text>
             <Text>{'         '}{f.message}</Text>
             {f.suggestion && <Text color="gray">{'         '}→ {f.suggestion}</Text>}
@@ -302,7 +302,7 @@ function Detail({
       lines.push(<Text key="lt" color="gray">Log:</Text>);
       log.forEach((line, i) => lines.push(<Text key={`l${i}`}>  {line}</Text>));
     }
-    if (result?.logFile) lines.push(<Text key="lf" color="gray">Log lengkap: {path.relative(pipeline.root, result.logFile)}</Text>);
+    if (result?.logFile) lines.push(<Text key="lf" color="gray">Full log: {path.relative(pipeline.root, result.logFile)}</Text>);
   }
   const visible = Math.max(5, rows - 6);
   const start = Math.min(offset, Math.max(0, lines.length - visible));
@@ -320,7 +320,7 @@ function Detail({
       <Text color="gray">{'─'.repeat(60)}</Text>
       {lines.slice(start, start + visible)}
       <Text color="gray">{'─'.repeat(60)}</Text>
-      <Text color="gray"> ↑↓ gulir  esc kembali  q keluar</Text>
+      <Text color="gray"> ↑↓ scroll  esc back  q quit</Text>
     </Box>
   );
 }

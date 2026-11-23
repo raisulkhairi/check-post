@@ -27,12 +27,12 @@ export async function statusCommand(flags: { cwd: string; json?: boolean }): Pro
   }
 
   const ref = gate.git.sha ? `${gate.git.branch}@${gate.git.sha.slice(0, 7)}` : '';
-  const ago = gate.lastRun ? ` · dijalankan ${formatDuration(Date.now() - Date.parse(gate.lastRun.updatedAt))} lalu` : '';
+  const ago = gate.lastRun ? ` · ran ${formatDuration(Date.now() - Date.parse(gate.lastRun.updatedAt))} ago` : '';
   if (gate.green) {
-    console.log(pc.green(pc.bold(`✔ GREEN · boleh deploy`)) + pc.gray(` · ${ref}${ago}`));
+    console.log(pc.green(pc.bold(`✔ GREEN · ok to deploy`)) + pc.gray(` · ${ref}${ago}`));
     return 0;
   }
-  console.log(pc.red(pc.bold('✖ RED · belum boleh deploy')) + pc.gray(ref ? ` · ${ref}${ago}` : ''));
+  console.log(pc.red(pc.bold('✖ RED · not ready to deploy')) + pc.gray(ref ? ` · ${ref}${ago}` : ''));
   for (const r of gate.reasons) console.log(pc.gray(`  • ${r}`));
   return 1;
 }

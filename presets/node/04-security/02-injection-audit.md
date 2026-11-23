@@ -3,13 +3,13 @@ fail_on: high
 ---
 # Injection audit
 
-Periksa:
-- Query SQL/NoSQL yang dibangun dengan string concatenation atau template literal dari input request
-- `child_process.exec`/`execSync` dengan input request
-- Path file dari input request tanpa normalisasi (path traversal)
-- Endpoint tanpa validasi input atau tanpa pemeriksaan otorisasi pada data milik user lain
+Check for:
+- SQL/NoSQL queries built by string concatenation or template literals from request input
+- `child_process.exec`/`execSync` with request input
+- File paths from request input without normalization (path traversal)
+- Endpoints without input validation or without authorization checks on other users' data
 
 Severity:
-- critical/high: input request mengalir ke sink tanpa validasi
-- medium: validasi ada tetapi lemah
+- critical/high: request input flows into a sink without validation
+- medium: validation exists but is weak
 - low: hardening

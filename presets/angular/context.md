@@ -1,2 +1,2 @@
-Project ini adalah aplikasi Angular (standalone components, TypeScript). Template ada di file `*.html`
-atau properti `template`, logika di `*.ts`. Abaikan folder `node_modules/`, `dist/`, `coverage/`, dan `.angular/`.
+This project is an Angular application (standalone components, TypeScript). Templates live in `*.html`
+files or the `template` property, logic in `*.ts`. Ignore `node_modules/`, `dist/`, `coverage/`, and `.angular/`.

@@ -6,7 +6,7 @@ import { formatDuration, findingLocation } from './format.js';
 
 const colorBySeverity = { critical: pc.magenta, high: pc.red, medium: pc.yellow, low: pc.cyan, info: pc.gray } as const;
 
-/** Renderer untuk CI / non-TTY: satu baris per kejadian, log stage diberi prefix. */
+/** Renderer for CI / non-TTY: one line per event, stage logs prefixed. */
 export function createPlainRenderer(stages: Map<string, StageNode>, opts: { verbose: boolean; write?: (s: string) => void }) {
   const write = opts.write ?? ((s: string) => process.stdout.write(s + '\n'));
   return (e: PipelineEvent) => {
@@ -24,7 +24,7 @@ export function createPlainRenderer(stages: Map<string, StageNode>, opts: { verb
         const cost = r.costUsd ? ` · $${r.costUsd.toFixed(3)}` : '';
         const label = `${e.id} ${pc.dim(`${time}${cost}`)}`;
         if (r.status === 'passed') write(pc.green(`✔ ${label}`));
-        else if (r.status === 'skipped') write(pc.gray(`– ${e.id} (${r.summary ?? 'dilewati'})`));
+        else if (r.status === 'skipped') write(pc.gray(`– ${e.id} (${r.summary ?? 'skipped'})`));
         else {
           const tag = r.allowFailure ? pc.yellow(' [allow_failure]') : '';
           write(pc.red(`✖ ${label}`) + tag + (r.error ? pc.red(` · ${r.error}`) : r.summary ? pc.dim(` · ${r.summary}`) : ''));

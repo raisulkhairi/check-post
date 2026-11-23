@@ -21,7 +21,7 @@ export function detectProject(root: string): ProjectInfo {
       scripts = pkg.scripts ?? {};
       deps = { ...pkg.dependencies, ...pkg.devDependencies };
     } catch {
-      /* package.json rusak: perlakukan sebagai project tanpa script */
+      /* broken package.json: treat as a project without scripts */
     }
   }
   const docs = ['AGENTS.md', 'CLAUDE.md', '.claude/CLAUDE.md', 'CONTRIBUTING.md'].filter((f) => existsSync(path.join(root, f)));
@@ -34,10 +34,10 @@ export function detectProject(root: string): ProjectInfo {
     return { kind: 'nextjs', label: `Next.js${version('next')}`, scripts, docs };
   }
   if (existsSync(pkgFile)) return { kind: 'node', label: 'Node.js', scripts, docs };
-  return { kind: 'unknown', label: 'tidak dikenali', scripts, docs };
+  return { kind: 'unknown', label: 'unknown', scripts, docs };
 }
 
-/** Script npm yang dibutuhkan sebuah perintah `run`, atau null bila bukan perintah npm. */
+/** npm script required by a `run` command, or null if it is not an npm command. */
 export function npmScriptOf(run: string): string | null {
   const m = run.trim().match(/^npm\s+(?:run(?:-script)?\s+([\w:.-]+)|(test|start))\b/);
   return m ? (m[1] ?? m[2]) : null;
@@ -54,8 +54,8 @@ export async function isIgnored(root: string, rel: string): Promise<boolean> {
 }
 
 /**
- * Tambahkan pola ke `.git/info/exclude` (hanya lokal) atau `.gitignore` (dibagikan),
- * hanya bila belum diabaikan git.
+ * Add patterns to `.git/info/exclude` (local only) or `.gitignore` (shared),
+ * only when git does not already ignore them.
  */
 export async function ignorePaths(root: string, patterns: string[], where: 'exclude' | 'gitignore'): Promise<string[]> {
   const added: string[] = [];

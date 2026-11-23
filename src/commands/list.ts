@@ -39,7 +39,7 @@ export function listCommand(flags: { cwd: string; json?: boolean }): number {
     const num = depth === 0 ? String(++top).padStart(2) : '  ';
     const indent = depth === 0 ? '' : '  '.repeat(depth - 1) + '├ ';
     const name = (indent + node.name).padEnd(24);
-    const kind = typeLabel(node).padEnd(13);
+    const kind = typeLabel(node).padEnd(15);
     let detail = '';
     if (node.kind === 'stage') {
       const bits: string[] = [];

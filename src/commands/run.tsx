@@ -51,7 +51,7 @@ export async function runCommand(target: string | undefined, flags: RunFlags): P
   if (target) {
     const node = findNode(pipeline.children, target);
     if (!node) {
-      console.error(pc.red(`Stage atau grup "${target}" tidak ditemukan. Lihat "checkpost list".`));
+      console.error(pc.red(`Stage or group "${target}" not found. See "checkpost list".`));
       return 2;
     }
     nodes = [node];
@@ -70,13 +70,13 @@ export async function runCommand(target: string | undefined, flags: RunFlags): P
     }
     const detected = await adapter.detect();
     if (!detected.installed) {
-      console.error(pc.red(`${adapter.label} tidak ditemukan. Install dulu: npm install -g @anthropic-ai/claude-code`));
+      console.error(pc.red(`${adapter.label} not found. Install it first: npm install -g @anthropic-ai/claude-code`));
       return 2;
     }
     const ui = readUiState(root);
     if (interactive && !flags.yes && pipeline.config.confirm_ai && !ui.aiConfirmed) {
       const ok = await confirm({
-        message: `${aiStages.length} stage AI akan memakai kuota ${adapter.label} (model: ${pipeline.config.model}, batas $${pipeline.config.max_budget_usd}/stage). Lanjutkan?`,
+        message: `${aiStages.length} AI stage${aiStages.length === 1 ? '' : 's'} will use your ${adapter.label} quota (model: ${pipeline.config.model}, limit $${pipeline.config.max_budget_usd}/stage). Continue?`,
         default: true,
       });
       if (!ok) return 1;
@@ -84,7 +84,7 @@ export async function runCommand(target: string | undefined, flags: RunFlags): P
     }
   }
 
-  // State run tidak boleh mengotori working tree project.
+  // Run state must not dirty the project's working tree.
   await ignorePaths(root, [`${STATE_DIR}/`], 'exclude');
 
   const git = await readGitState(root);
@@ -115,7 +115,7 @@ export async function runCommand(target: string | undefined, flags: RunFlags): P
     return gate?.green ? 0 : 1;
   }
 
-  // Mode CI / non-TTY
+  // CI / non-TTY mode
   const write = flags.json ? (s: string) => process.stderr.write(s + '\n') : undefined;
   const stageMap = new Map(allStages(pipeline.children).map((s) => [s.id, s]));
   const renderer = createPlainRenderer(stageMap, { verbose: Boolean(flags.verbose), write });
@@ -156,13 +156,13 @@ export async function runCommand(target: string | undefined, flags: RunFlags): P
     );
   } else {
     out('');
-    if (gate.green) out(pc.green(pc.bold('✔ GATE GREEN · boleh deploy')));
+    if (gate.green) out(pc.green(pc.bold('✔ GATE GREEN · ok to deploy')));
     else {
-      out(pc.red(pc.bold('✖ GATE RED · belum boleh deploy')));
+      out(pc.red(pc.bold('✖ GATE RED · not ready to deploy')));
       for (const r of gate.reasons) out(pc.gray(`  • ${r}`));
     }
     const cost = Object.values(gate.lastRun?.results ?? {}).reduce((sum, r) => sum + (r.costUsd ?? 0), 0);
-    if (cost) out(pc.gray(`  Biaya AI: $${cost.toFixed(3)}`));
+    if (cost) out(pc.gray(`  AI cost: $${cost.toFixed(3)}`));
   }
   return gate.green ? 0 : 1;
 }

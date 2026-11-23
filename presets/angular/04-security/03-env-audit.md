@@ -1,11 +1,11 @@
 ---
 fail_on: high
 ---
-# Audit konfigurasi environment
+# Environment configuration audit
 
-Jangan pernah membaca isi file env atau file rahasia; cukup gunakan nama variabel.
-Periksa:
-1. File konfigurasi environment yang berisi rahasia tercantum di `.gitignore`.
-2. Tidak ada nilai rahasia (key, token, password) yang di-hardcode sebagai fallback, mis. `process.env.X || "nilai-asli"`.
-3. Variabel yang terekspos ke browser (bundle client) tidak berisi rahasia.
-4. Bila ada file contoh (`.env.example` dsb.), bandingkan nama variabelnya dengan yang dipakai di kode.
+Never read the contents of env files or other secret files; work with variable NAMES only.
+Check that:
+1. Environment config files that hold secrets are listed in `.gitignore`.
+2. No secret value (key, token, password) is hardcoded as a fallback, e.g. `process.env.X || "real-value"`.
+3. Variables exposed to the browser (client bundle) contain no secrets.
+4. If an example file exists (`.env.example` etc.), its variable names match the ones used in code.

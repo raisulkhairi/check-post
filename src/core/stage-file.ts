@@ -14,7 +14,7 @@ export interface ParsedMarkdown<T> {
   body: string;
 }
 
-/** Parse frontmatter YAML + body Markdown, lalu validasi frontmatter dengan schema. */
+/** Parse YAML frontmatter + Markdown body, then validate the frontmatter against a schema. */
 export function parseMarkdown<S extends z.ZodTypeAny>(
   source: string,
   schema: S,
@@ -22,10 +22,10 @@ export function parseMarkdown<S extends z.ZodTypeAny>(
 ): ParsedMarkdown<z.infer<S>> {
   let parsed: matter.GrayMatterFile<string>;
   try {
-    // Tanpa cache: gray-matter meng-cache berdasarkan isi string, yang mengacaukan test.
+    // No cache: gray-matter caches by input string, which breaks tests.
     parsed = matter(source, {});
   } catch (err) {
-    throw new DefinitionError([`${fileLabel}: frontmatter YAML tidak valid (${(err as Error).message})`]);
+    throw new DefinitionError([`${fileLabel}: invalid YAML frontmatter (${(err as Error).message})`]);
   }
   const result = schema.safeParse(parsed.data ?? {});
   if (!result.success) {
@@ -47,7 +47,7 @@ export function stageTypeOf(run: string | undefined, body: string): StageType | 
   return null;
 }
 
-/** Ubah `30s`, `5m`, `1h`, `500ms`, atau angka (detik) menjadi milidetik. */
+/** Convert `30s`, `5m`, `1h`, `500ms`, or a number (seconds) to milliseconds. */
 export function parseDuration(value: string | number | undefined, fallbackMs: number): number {
   if (value === undefined) return fallbackMs;
   if (typeof value === 'number') return value * 1000;

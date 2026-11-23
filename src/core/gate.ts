@@ -33,7 +33,7 @@ export interface GateResult {
   git: GitState;
 }
 
-/** Path milik checkpost sendiri tidak dihitung sebagai perubahan project. */
+/** checkpost's own paths do not count as project changes. */
 const isOwnPath = (file: string) =>
   file.startsWith(`${STATE_DIR}/`) || file.startsWith('checkpost/') || file === '.claude/commands/checkpost.md';
 
@@ -45,7 +45,7 @@ export async function readGitState(cwd: string): Promise<GitState> {
     return { isRepo: false, sha: null, branch: null, dirtyFiles: [] };
   }
   const sha = await execa('git', ['rev-parse', 'HEAD'], { cwd, reject: false });
-  // symbolic-ref juga bekerja di repo yang belum punya commit (rev-parse HEAD gagal di sana).
+  // symbolic-ref also works in a repo with no commits (rev-parse HEAD fails there).
   const branch = await execa('git', ['symbolic-ref', '--short', '-q', 'HEAD'], { cwd, reject: false });
   const status = await execa('git', ['status', '--porcelain', '--untracked-files=all'], { cwd });
   const dirtyFiles = status.stdout
@@ -61,7 +61,7 @@ export async function readGitState(cwd: string): Promise<GitState> {
   };
 }
 
-/** Hash dari seluruh definisi stage, supaya edit file .md membatalkan hasil lama. */
+/** Hash of every stage definition, so editing a .md file invalidates old results. */
 export function definitionsHash(pipeline: Pipeline): string {
   const h = createHash('sha256');
   h.update(JSON.stringify(pipeline.config));
@@ -87,8 +87,8 @@ export function readLastRun(root: string): LastRun | null {
 }
 
 /**
- * Simpan hasil run. Run parsial (satu stage/grup) digabung dengan hasil sebelumnya
- * selama commit dan definisi stage masih sama.
+ * Save run results. A partial run (one stage/group) is merged into the previous results
+ * as long as the commit and stage definitions are unchanged.
  */
 export function saveRun(pipeline: Pipeline, git: GitState, results: Record<string, StageResult>, partial: boolean): LastRun {
   const hash = definitionsHash(pipeline);
@@ -114,25 +114,25 @@ export async function evaluateGate(pipeline: Pipeline): Promise<GateResult> {
   const reasons: string[] = [];
 
   if (!lastRun) {
-    reasons.push('pipeline belum pernah dijalankan');
+    reasons.push('pipeline has never been run');
     return { green: false, reasons, lastRun, git };
   }
   if (git.isRepo && lastRun.sha !== git.sha) {
-    reasons.push(`hasil terakhir untuk commit ${lastRun.sha?.slice(0, 7) ?? '?'}, HEAD sekarang ${git.sha?.slice(0, 7) ?? '?'}`);
+    reasons.push(`last results are for commit ${lastRun.sha?.slice(0, 7) ?? '?'}, HEAD is now ${git.sha?.slice(0, 7) ?? '?'}`);
   }
   if (lastRun.definitionsHash !== definitionsHash(pipeline)) {
-    reasons.push('definisi stage berubah sejak run terakhir');
+    reasons.push('stage definitions changed since the last run');
   }
   if (pipeline.config.require_clean_tree && git.isRepo) {
-    if (git.dirtyFiles.length) reasons.push(`working tree kotor (${git.dirtyFiles.length} file belum di-commit)`);
-    else if (lastRun.dirtyAtRun.length) reasons.push('run terakhir dilakukan saat working tree kotor');
+    if (git.dirtyFiles.length) reasons.push(`working tree is dirty (${git.dirtyFiles.length} uncommitted file${git.dirtyFiles.length === 1 ? '' : 's'})`);
+    else if (lastRun.dirtyAtRun.length) reasons.push('the last run happened on a dirty working tree');
   }
   for (const stage of allStages(pipeline.children)) {
     const r = lastRun.results[stage.id];
-    if (!r) reasons.push(`stage ${stage.id} belum dijalankan`);
-    else if (isBlockingFailure(r)) reasons.push(`stage ${stage.id} ${r.status === 'error' ? 'error' : 'gagal'}`);
+    if (!r) reasons.push(`stage ${stage.id} has not run`);
+    else if (isBlockingFailure(r)) reasons.push(`stage ${stage.id} ${r.status === 'error' ? 'errored' : 'failed'}`);
     else if (r.status === 'skipped' || r.status === 'pending' || r.status === 'running')
-      reasons.push(`stage ${stage.id} tidak selesai (${r.status})`);
+      reasons.push(`stage ${stage.id} did not finish (${r.status})`);
   }
   return { green: reasons.length === 0, reasons, lastRun, git };
 }

@@ -3,13 +3,13 @@ fail_on: medium
 ---
 # Code standard
 
-Baca dokumen konvensi project bila ada (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `README.md`),
-lalu periksa kode di `src/` terhadap konvensi tersebut.
+Read the project's convention documents if present (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `README.md`),
+then check the code in `src/` against those conventions.
 
-Tambahan aturan umum:
-- Tidak ada tipe `any` yang tidak perlu
-- Tidak ada `console.log` tertinggal di kode produksi
-- Tidak ada kode yang dikomentari dalam blok besar
+General rules on top of that:
+- No unnecessary `any` types
+- No leftover `console.log` in production code
+- No large blocks of commented-out code
 
-Laporkan maksimal 15 temuan paling penting. Gunakan medium untuk pelanggaran konvensi yang tertulis eksplisit,
-low untuk saran gaya.
+Report at most the 15 most important findings. Use medium for violations of explicitly written conventions,
+low for style suggestions.

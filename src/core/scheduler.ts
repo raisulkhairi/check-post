@@ -7,13 +7,13 @@ import { runCommand } from './runners/command.js';
 import { parseDuration } from './stage-file.js';
 import type { GroupNode, Pipeline, PipelineNode, StageNode, StageResult, StageStatus } from './types.js';
 
-// Sama dengan STATE_DIR di gate.ts (tidak diimpor untuk menghindari import melingkar).
+// Same as STATE_DIR in gate.ts (not imported, to avoid a circular import).
 const STATE_DIR_NAME = '.checkpost';
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_AI_TIMEOUT_MS = 10 * 60_000;
 
 export interface RunOptions {
-  /** Jalankan hanya node ini (stage atau grup). Default: seluruh pipeline. */
+  /** Run only these nodes (stages or groups). Default: the whole pipeline. */
   nodes?: PipelineNode[];
   adapter?: Adapter;
   onEvent: EventSink;
@@ -28,7 +28,7 @@ export interface RunOutcome {
   durationMs: number;
 }
 
-/** Stage/grup dianggap menghalangi pipeline bila gagal dan tidak allow_failure. */
+/** A stage/group blocks the pipeline when it failed and is not allow_failure. */
 export const isBlockingFailure = (r: Pick<StageResult, 'status' | 'allowFailure'>) =>
   (r.status === 'failed' || r.status === 'error') && !r.allowFailure;
 
@@ -93,7 +93,7 @@ export async function runPipeline(pipeline: Pipeline, opts: RunOptions): Promise
           signal: opts.signal,
           onLine: emit,
         });
-        if (res.canceled) return finish({ status: 'skipped', summary: 'dibatalkan', exitCode: res.exitCode });
+        if (res.canceled) return finish({ status: 'skipped', summary: 'cancelled', exitCode: res.exitCode });
         if (res.timedOut) return finish({ status: 'error', error: 'timeout', exitCode: res.exitCode });
         if (stage.type === 'command') {
           return finish({
@@ -103,13 +103,14 @@ export async function runPipeline(pipeline: Pipeline, opts: RunOptions): Promise
           });
         }
         command = { run, exitCode: res.exitCode, output: res.output };
-        emit(`[AI] meninjau hasil perintah (exit code ${res.exitCode})…`);
+        emit(`[AI] reviewing the command result (exit code ${res.exitCode})…`);
       }
 
-      if (!opts.adapter) throw new Error('Stage AI butuh agent, tetapi agent tidak tersedia');
+      if (!opts.adapter) throw new Error('AI stage needs an agent, but none is available');
       const outcome = await runAiStage(opts.adapter, stage, {
         cwd: pipeline.root,
         model: pipeline.config.model,
+        language: pipeline.config.language,
         sensitivePaths: pipeline.config.sensitive_paths,
         maxBudgetUsd: pipeline.config.max_budget_usd,
         timeoutMs: parseDuration(stage.config.timeout, DEFAULT_AI_TIMEOUT_MS),
@@ -117,7 +118,7 @@ export async function runPipeline(pipeline: Pipeline, opts: RunOptions): Promise
         onLog: emit,
         command,
       });
-      for (const denied of outcome.deniedReads) emit(`[AI] akses diblokir: ${denied}`);
+      for (const denied of outcome.deniedReads) emit(`[AI] access blocked: ${denied}`);
       const blocking = outcome.verdict.findings.filter((f) => isBlocking(f, stage.config.fail_on));
       emit(`[AI] ${outcome.verdict.summary}`);
       return finish({
@@ -128,14 +129,14 @@ export async function runPipeline(pipeline: Pipeline, opts: RunOptions): Promise
         costUsd: outcome.costUsd,
       });
     } catch (err) {
-      if (opts.signal?.aborted) return finish({ status: 'skipped', summary: 'dibatalkan' });
+      if (opts.signal?.aborted) return finish({ status: 'skipped', summary: 'cancelled' });
       const message = (err as Error).message;
       emit(`ERROR: ${message}`);
       return finish({ status: 'error', error: message });
     }
   };
 
-  /** Mengembalikan true bila node berakhir dengan kegagalan yang menghalangi. */
+  /** Returns true when the node ended in a blocking failure. */
   const runNode = async (node: PipelineNode, failFast: boolean): Promise<boolean> => {
     if (node.kind === 'stage') return isBlockingFailure(await runStage(node));
     return runGroup(node, node.config.fail_fast ?? failFast);
@@ -160,13 +161,13 @@ export async function runPipeline(pipeline: Pipeline, opts: RunOptions): Promise
     let failed = false;
     for (let i = 0; i < nodes.length; i++) {
       if (opts.signal?.aborted) {
-        skip(nodes.slice(i), 'dibatalkan');
+        skip(nodes.slice(i), 'cancelled');
         break;
       }
       if (await runNode(nodes[i], failFast)) {
         failed = true;
         if (failFast) {
-          skip(nodes.slice(i + 1), 'dilewati: stage sebelumnya gagal');
+          skip(nodes.slice(i + 1), 'skipped: an earlier stage failed');
           break;
         }
       }

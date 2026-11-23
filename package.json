@@ -1,7 +1,7 @@
 {
   "name": "check-post",
   "version": "0.1.0",
-  "description": "Pipeline CI/CD lokal: stage dari file Markdown, dijalankan oleh AI CLI (Claude Code). Gate GREEN = boleh deploy.",
+  "description": "Local CI/CD pipeline whose stages are Markdown files, run by an AI CLI (Claude Code). A green gate means ready to deploy.",
   "keywords": [
     "ci",
     "cd",

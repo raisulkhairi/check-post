@@ -35,7 +35,7 @@ export function formatDuration(ms: number): string {
 }
 
 export function typeLabel(node: PipelineNode): string {
-  if (node.kind === 'group') return node.config.parallel ? 'grup paralel' : 'grup';
+  if (node.kind === 'group') return node.config.parallel ? 'parallel group' : 'group';
   if (node.type === 'ai') return 'AI';
   if (node.type === 'command+ai') return 'cmd+AI';
   return 'command';

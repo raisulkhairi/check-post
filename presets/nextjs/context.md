@@ -1,1 +1,1 @@
-Project ini adalah aplikasi Next.js (React, TypeScript). Abaikan folder `node_modules/`, `.next/`, `out/`, dan `coverage/`.
+This project is a Next.js application (React, TypeScript). Ignore `node_modules/`, `.next/`, `out/`, and `coverage/`.

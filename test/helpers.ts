@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-/** Buat project sementara dengan file-file di dalam checkpost/. */
+/** Create a temporary project with the given files inside checkpost/. */
 export function fixture(files: Record<string, string>): string {
   const root = mkdtempSync(path.join(tmpdir(), 'aip-test-'));
   for (const [rel, content] of Object.entries(files)) {

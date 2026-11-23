@@ -5,7 +5,7 @@ import type { Adapter, AdapterRunOptions, AdapterRunResult } from './types.js';
 
 const READ_TOOLS = ['Read', 'Grep', 'Glob'];
 
-/** Ubah glob sensitive_paths menjadi aturan permission deny Claude Code. */
+/** Turn sensitive_paths globs into Claude Code permission deny rules. */
 export function denyRules(globs: string[]): string[] {
   const rules: string[] = [];
   for (const glob of globs) {
@@ -19,11 +19,11 @@ function describeToolUse(name: string, input: Record<string, unknown>, cwd: stri
   const rel = (p: unknown) => (typeof p === 'string' ? path.relative(cwd, p) || p : '');
   switch (name) {
     case 'Read':
-      return `membaca ${rel(input.file_path)}`;
+      return `reading ${rel(input.file_path)}`;
     case 'Grep':
-      return `mencari "${String(input.pattern ?? '')}"${input.path ? ` di ${rel(input.path)}` : ''}`;
+      return `searching "${String(input.pattern ?? '')}"${input.path ? ` in ${rel(input.path)}` : ''}`;
     case 'Glob':
-      return `mencari file ${String(input.pattern ?? '')}`;
+      return `finding files ${String(input.pattern ?? '')}`;
     default:
       return name;
   }
@@ -56,8 +56,8 @@ export function createClaudeCodeAdapter(bin = 'claude'): Adapter {
         '--permission-mode',
         'dontAsk',
         '--no-session-persistence',
-        // Konteks seminimal mungkin: tanpa MCP, plugin, dan setting user. Ini menekan biaya
-        // per stage dari dolar ke sen.
+        // Minimal context: no MCP servers, plugins, or user settings. This cuts the cost
+        // per stage from dollars to cents.
         '--strict-mcp-config',
         '--setting-sources',
         'project',
@@ -115,7 +115,7 @@ export function createClaudeCodeAdapter(bin = 'claude'): Adapter {
         }
       }
       } catch {
-        /* stream ditutup paksa saat proses dihentikan */
+        /* stream closed when the process is killed */
       }
       const done = await child;
       clearTimeout(timer);
@@ -124,14 +124,14 @@ export function createClaudeCodeAdapter(bin = 'claude'): Adapter {
       if (!final) {
         const stderr = Array.isArray(done.stderr) ? done.stderr.join('\n') : String(done.stderr ?? '');
         const reason = canceled
-          ? 'dibatalkan'
+          ? 'cancelled'
           : timedOut
-            ? `timeout setelah ${Math.round(o.timeoutMs / 1000)}s`
-            : stderr.trim() || `claude keluar dengan kode ${done.exitCode}`;
-        throw new Error(`Claude Code gagal: ${reason}`);
+            ? `timed out after ${Math.round(o.timeoutMs / 1000)}s`
+            : stderr.trim() || `claude exited with code ${done.exitCode}`;
+        throw new Error(`Claude Code failed: ${reason}`);
       }
       if (final.is_error) {
-        throw new Error(`Claude Code error: ${String(final.result ?? final.subtype ?? 'tidak diketahui')}`);
+        throw new Error(`Claude Code error: ${String(final.result ?? final.subtype ?? 'unknown')}`);
       }
 
       const denials = (final.permission_denials as Array<{ tool_input?: Record<string, unknown> }> | undefined) ?? [];

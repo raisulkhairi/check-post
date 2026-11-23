@@ -1,4 +1,4 @@
-/** Hentikan seluruh process group (SIGTERM, lalu SIGKILL bila masih hidup). */
+/** Stop a whole process group (SIGTERM, then SIGKILL if still alive). */
 export function killTree(pid: number | undefined, graceMs = 3000): void {
   if (!pid) return;
   const send = (signal: NodeJS.Signals) => {
@@ -8,7 +8,7 @@ export function killTree(pid: number | undefined, graceMs = 3000): void {
       try {
         process.kill(pid, signal);
       } catch {
-        /* sudah mati */
+        /* already dead */
       }
     }
   };

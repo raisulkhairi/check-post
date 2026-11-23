@@ -4,13 +4,13 @@ fail_on: high
 ---
 # XSS audit (React/Next.js)
 
-Periksa:
-- `dangerouslySetInnerHTML` berisi data dari user, query string, CMS, atau API tanpa sanitasi (mis. DOMPurify)
-- `href`/`src` yang dibangun dari input user (risiko `javascript:` URL)
-- Data `searchParams`/`params` yang dirender atau dipakai di redirect tanpa validasi
-- `eval`, `new Function`, manipulasi `innerHTML` langsung
+Check for:
+- `dangerouslySetInnerHTML` with data from users, query strings, a CMS, or an API without sanitization (e.g. DOMPurify)
+- `href`/`src` built from user input (risk of `javascript:` URLs)
+- `searchParams`/`params` data rendered or used in redirects without validation
+- `eval`, `new Function`, direct `innerHTML` manipulation
 
 Severity:
-- high: data tidak tepercaya mengalir ke sink tanpa sanitasi
-- medium: sumber data tidak jelas
-- low: data statis/terkontrol penuh
+- high: untrusted data flows into a sink without sanitization
+- medium: the data source is unclear
+- low: static or fully controlled data

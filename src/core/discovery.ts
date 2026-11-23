@@ -43,7 +43,7 @@ function listEntries(dir: string, isRoot: boolean): Entry[] {
   const entries: Entry[] = [];
   for (const fsName of readdirSync(dir)) {
     if (fsName.startsWith('.')) continue;
-    if (fsName.startsWith('_')) continue; // termasuk _group.md, dibaca terpisah
+    if (fsName.startsWith('_')) continue; // includes _group.md, which is read separately
     if (isRoot && fsName === PIPELINE_FILE) continue;
     const full = path.join(dir, fsName);
     const isDir = statSync(full).isDirectory();
@@ -56,7 +56,7 @@ function listEntries(dir: string, isRoot: boolean): Entry[] {
 export function discoverPipeline(root: string, dirName = PIPELINE_DIR): Pipeline {
   const dir = path.join(root, dirName);
   if (!existsSync(dir) || !statSync(dir).isDirectory()) {
-    throw new DefinitionError([`Folder ${dirName}/ tidak ditemukan di ${root}. Jalankan "checkpost init" dulu.`]);
+    throw new DefinitionError([`Folder ${dirName}/ not found in ${root}. Run "checkpost init" first.`]);
   }
   const problems: string[] = [];
   const rel = (p: string) => path.relative(root, p);
@@ -82,7 +82,7 @@ export function discoverPipeline(root: string, dirName = PIPELINE_DIR): Pipeline
     for (const e of entries) {
       if (e.prefix === null) continue;
       const other = seen.get(e.prefix);
-      if (other) problems.push(`${rel(current) || '.'}: prefix ${e.prefix} dipakai dua kali (${other} dan ${e.fsName})`);
+      if (other) problems.push(`${rel(current) || '.'}: prefix ${e.prefix} is used twice (${other} and ${e.fsName})`);
       else seen.set(e.prefix, e.fsName);
     }
 
@@ -106,7 +106,7 @@ export function discoverPipeline(root: string, dirName = PIPELINE_DIR): Pipeline
         if (!groupConfig.enabled) continue;
         const children = walk(e.full, groupContext, false);
         if (children.length === 0) {
-          problems.push(`${rel(e.full)}/: grup kosong (tidak ada stage .md yang aktif)`);
+          problems.push(`${rel(e.full)}/: empty group (no enabled .md stages)`);
           continue;
         }
         const group: GroupNode = {
@@ -127,7 +127,7 @@ export function discoverPipeline(root: string, dirName = PIPELINE_DIR): Pipeline
         if (!data.enabled) continue;
         const type = stageTypeOf(data.run, body);
         if (!type) {
-          problems.push(`${rel(e.full)}: stage kosong. Isi "run:" di frontmatter, instruksi AI di body, atau keduanya.`);
+          problems.push(`${rel(e.full)}: empty stage. Add "run:" to the frontmatter, AI instructions to the body, or both.`);
           continue;
         }
         const stage: StageNode = {
@@ -151,14 +151,14 @@ export function discoverPipeline(root: string, dirName = PIPELINE_DIR): Pipeline
 
   const children = walk(dir, rootContext, true);
   if (problems.length === 0 && children.length === 0) {
-    problems.push(`${dirName}/: belum ada stage. Tambahkan file seperti 01-build.md.`);
+    problems.push(`${dirName}/: no stages yet. Add a file such as 01-build.md.`);
   }
   if (problems.length) throw new DefinitionError(problems);
 
   return { root, dir, config: pipelineConfig, children };
 }
 
-/** Semua stage dalam urutan tampil, beserta kedalamannya. */
+/** Every node in display order, with its depth. */
 export function flatten(nodes: PipelineNode[], depth = 0): Array<{ node: PipelineNode; depth: number }> {
   const out: Array<{ node: PipelineNode; depth: number }> = [];
   for (const node of nodes) {
@@ -174,7 +174,7 @@ export function allStages(nodes: PipelineNode[]): StageNode[] {
     .filter((n): n is StageNode => n.kind === 'stage');
 }
 
-/** Cari node berdasarkan id persis, id tanpa prefix, atau nama. */
+/** Find a node by exact id, id without prefixes, or name. */
 export function findNode(nodes: PipelineNode[], query: string): PipelineNode | undefined {
   const q = query.replace(/\.md$/i, '').replace(/\/+$/, '');
   const all = flatten(nodes).map((x) => x.node);

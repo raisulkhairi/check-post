@@ -14,8 +14,8 @@ export async function runCommand(
   command: string,
   opts: { cwd: string; timeoutMs: number; signal?: AbortSignal; onLine: (line: string) => void },
 ): Promise<CommandRunResult> {
-  // detached: proses jadi pemimpin process group, sehingga timeout/batal bisa menghentikan
-  // seluruh turunannya (mis. `ng test` yang memanggil browser), bukan hanya shell-nya.
+  // detached: the process leads its own process group, so a timeout or cancel can stop
+  // every descendant (e.g. `ng test` spawning a browser), not just the shell.
   const child = execa(command, {
     shell: true,
     cwd: opts.cwd,
@@ -50,7 +50,7 @@ export async function runCommand(
       if (output.length > MAX_KEPT_OUTPUT) output = output.slice(-MAX_KEPT_OUTPUT);
     }
   } catch {
-    /* stream ditutup paksa saat proses dihentikan */
+    /* stream closed when the process is killed */
   }
   const done = await child;
   clearTimeout(timer);
