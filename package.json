@@ -1,0 +1,65 @@
+{
+  "name": "check-post",
+  "version": "0.1.0",
+  "description": "Pipeline CI/CD lokal: stage dari file Markdown, dijalankan oleh AI CLI (Claude Code). Gate GREEN = boleh deploy.",
+  "keywords": [
+    "ci",
+    "cd",
+    "pipeline",
+    "claude",
+    "claude-code",
+    "ai",
+    "security-audit",
+    "code-review",
+    "cli",
+    "markdown"
+  ],
+  "homepage": "https://github.com/raisulkhairi/check-post#readme",
+  "bugs": {
+    "url": "https://github.com/raisulkhairi/check-post/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/raisulkhairi/check-post.git"
+  },
+  "license": "MIT",
+  "author": "Raisul khairi",
+  "type": "module",
+  "bin": {
+    "check-post": "dist/cli.js",
+    "checkpost": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "presets"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.json && chmod +x dist/cli.js",
+    "dev": "tsx src/cli.tsx",
+    "test": "vitest run",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "8.8.1",
+    "commander": "15.1.0",
+    "execa": "10.2.1",
+    "gray-matter": "4.0.3",
+    "ink": "8.0.0",
+    "picocolors": "1.1.1",
+    "react": "19.3.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.1"
+  }
+}
