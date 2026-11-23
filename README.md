@@ -31,9 +31,14 @@ npm install -g check-post
 ```
 Perintahnya bisa ditulis `check-post` atau `checkpost`.
 
-Versi terbaru dari GitHub:
+Versi terbaru langsung dari GitHub:
 ```bash
-npm install -g github:raisulkhairi/check-post
+npx github:raisulkhairi/check-post init
+```
+Hindari `npm install -g github:…`. npm gagal membangun paket dari git dalam mode global (`tsc: not found`). Untuk install permanen versi GitHub:
+```bash
+git clone https://github.com/raisulkhairi/check-post.git
+cd check-post && npm install && npm link
 ```
 
 ## Mulai
