@@ -1,6 +1,6 @@
 {
   "name": "check-post",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Local CI/CD pipeline whose stages are Markdown files, run by an AI CLI (Claude Code). A green gate means ready to deploy.",
   "keywords": [
     "ci",
